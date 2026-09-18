@@ -29,7 +29,7 @@ cos:
     permission: "READ"     # READ | WRITE | READ_ACP | WRITE_ACP | FULL_CONTROL
 
   # PDR's IP (CIDR) to add to the bucket's firewall allow-list.
-  pdr_ip: "203.0.113.10/32"
+  pdr_ip: "148.110.134.30/32"
 
   # Safety switch: if the bucket currently has NO allowed_ip whitelist at
   # all (i.e. it is open to any IP), adding pdr_ip alone would instead
