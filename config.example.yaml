@@ -43,7 +43,7 @@ pag:
 
   # Partition where the repository (bucket) must be created. Either the
   # partition name or its uuid.
-  partition: "PARTITION-BACKUP-01"
+  partition: "costotape"
 
   # PAG user/group/ESP that PDR authenticates as; the created repository
   # is owned by this principal so PDR can write replicated objects to it.
