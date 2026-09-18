@@ -7,15 +7,11 @@ PoINT Archival Gateway (PAG) repository, driven by PoINT Data Replicator
 For a given bucket name, running the tool does:
 
 1. **COS** (`<accesser>:8338/container/{bucket}`)
-   - `GET` the bucket to read its current ACL, IP whitelist (`firewall`),
-     and Container Vault (the `storage_location` field, i.e. the CV's
-     provisioning code).
-   - `PATCH` the bucket, adding that CV's configured backup service
-     account to the ACL and the PDR IP to the firewall whitelist (existing
-     entries are preserved — ACL and firewall are re-sent in full, since
-     the API replaces them wholesale on PATCH). Each Container Vault has
-     its own backup service account (`cos.container_vaults` in the
-     config), looked up automatically from the bucket's `storage_location`.
+   - `GET` the bucket to read its current ACL and IP whitelist (`firewall`).
+   - `PATCH` the bucket, adding the configured backup service account to
+     the ACL and the PDR IP to the firewall whitelist (existing entries are
+     preserved — ACL and firewall are re-sent in full, since the API
+     replaces them wholesale on PATCH).
    - `PATCH` the bucket's `notifications.topic` to the bucket's own name.
 2. **PAG** (`/api/partitions/{partitionUuid}/repositories`)
    - Create an object repository with the same name as the COS bucket in

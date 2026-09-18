@@ -69,27 +69,6 @@ def _build_pdr_client(cfg: dict, dry_run: bool) -> PdrClient:
     return PdrClient(base_url, session, timeout=cfg.get("timeout", 30), dry_run=dry_run)
 
 
-def _resolve_backup_sa(cos_cfg: dict, storage_location: str | None) -> dict:
-    """Look up the backup service account to grant, for the Container Vault
-    (CV) the bucket lives in. Each CV has its own backup SA, so this is
-    keyed by `storage_location` (the CV's provisioning code), which COS
-    reports on every bucket.
-    """
-    vaults = require(cos_cfg, "container_vaults", "cos")
-    if not storage_location:
-        raise ConfigError(
-            "Bucket response has no 'storage_location' (container vault provisioning code); "
-            "cannot determine which backup_service_account to grant."
-        )
-    if storage_location not in vaults:
-        raise ConfigError(
-            f"No cos.container_vaults entry for storage_location '{storage_location}'. "
-            f"Configured vaults: {sorted(vaults)}"
-        )
-    section = f"cos.container_vaults.{storage_location}"
-    return require(vaults[storage_location], "backup_service_account", section)
-
-
 def _sync_cos_bucket(cos_cfg: dict, bucket_name: str, dry_run: bool, report: SyncReport) -> None:
     client = _build_cos_client(cos_cfg, dry_run)
 
@@ -97,10 +76,9 @@ def _sync_cos_bucket(cos_cfg: dict, bucket_name: str, dry_run: bool, report: Syn
     existing_acl = bucket.get("acl")
     existing_firewall = bucket.get("firewall")
     time_updated = bucket.get("time_updated")
-    storage_location = bucket.get("storage_location")
 
-    backup_sa = _resolve_backup_sa(cos_cfg, storage_location)
-    grantee = require(backup_sa, "grantee", f"cos.container_vaults.{storage_location}.backup_service_account")
+    backup_sa = require(cos_cfg, "backup_service_account", "cos")
+    grantee = require(backup_sa, "grantee", "cos.backup_service_account")
     permission = backup_sa.get("permission", "READ")
     pdr_ip = require(cos_cfg, "pdr_ip", "cos")
     allow_create_whitelist = cos_cfg.get("allow_create_whitelist", False)

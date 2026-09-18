@@ -21,24 +21,12 @@ cos:
   verify_ssl: false
   timeout: 30
 
-  # There are several Container Vaults (CV) in this COS, each with its own
-  # backup service account. A bucket's CV is identified by the
-  # `storage_location` field COS returns for it (the CV's provisioning
-  # code) -- to find it for an existing bucket, GET it and look at
-  # "storage_location" in the response, or check the COS console for the
-  # CV's provisioning code directly.
-  #
-  # Add one entry per CV you need to sync buckets for; the tool picks the
-  # right backup_service_account automatically based on the bucket's CV.
-  container_vaults:
-    "CHANGE_ME_CV1_PROVISIONING_CODE":
-      backup_service_account:
-        grantee: "${COS_BACKUP_SA_CV1_ID}"   # storage account id / service instance id
-        permission: "READ"                   # READ | WRITE | READ_ACP | WRITE_ACP | FULL_CONTROL
-    # "CHANGE_ME_CV2_PROVISIONING_CODE":
-    #   backup_service_account:
-    #     grantee: "${COS_BACKUP_SA_CV2_ID}"
-    #     permission: "READ"
+  # Backup service account to grant access to the bucket's ACL so it can
+  # be read for replication. The grantee is "<project_id>@<account_uuid>",
+  # not the access/secret key (those are for signing S3 requests, not ACLs).
+  backup_service_account:
+    grantee: "sa-backup@00000000-0000-0000-0000-000000000002"
+    permission: "READ"     # READ | WRITE | READ_ACP | WRITE_ACP | FULL_CONTROL
 
   # PDR's IP (CIDR) to add to the bucket's firewall allow-list.
   pdr_ip: "203.0.113.10/32"
