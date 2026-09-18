@@ -11,6 +11,28 @@ from .config import AuthConfig
 
 logger = logging.getLogger(__name__)
 
+_REDACTED = "***REDACTED***"
+_SENSITIVE_KEYS = {"password", "secret", "secretkey", "accesskey", "token", "apikey"}
+
+
+def _normalize_key(key: str) -> str:
+    return key.lower().replace("_", "")
+
+
+def redact_secrets(value: Any) -> Any:
+    """Recursively mask values of sensitive-looking keys (password, secret
+    key, access key, token, ...) so request bodies can be logged (e.g. in
+    --dry-run) without leaking credentials to the terminal/log files.
+    """
+    if isinstance(value, dict):
+        return {
+            k: (_REDACTED if _normalize_key(k) in _SENSITIVE_KEYS else redact_secrets(v))
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_secrets(v) for v in value]
+    return value
+
 
 class ApiError(Exception):
     def __init__(self, method: str, url: str, status_code: int, body: str):
@@ -49,7 +71,7 @@ def request_json(
     actually sent.
     """
     if dry_run and method.upper() != "GET":
-        logger.info("[dry-run] %s %s json=%s", method, url, kwargs.get("json"))
+        logger.info("[dry-run] %s %s json=%s", method, url, redact_secrets(kwargs.get("json")))
         return None
 
     resp = session.request(method, url, timeout=timeout, **kwargs)

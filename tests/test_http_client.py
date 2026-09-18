@@ -1,4 +1,4 @@
-from cos2pag.http_client import ApiError, request_json
+from cos2pag.http_client import ApiError, redact_secrets, request_json
 
 
 class FakeResponse:
@@ -50,3 +50,35 @@ def test_request_json_dry_run_still_performs_get():
     result = request_json(session, "GET", "https://example.com/x", dry_run=True)
     assert result == {"ok": True}
     assert len(session.calls) == 1
+
+
+def test_redact_secrets_masks_known_sensitive_keys():
+    body = {
+        "alias": "my-bucket",
+        "source": {
+            "s3": {
+                "bucketName": "my-bucket",
+                "accessKey": "AKIA-real-value",
+                "secretKey": "shh-do-not-log-me",
+            }
+        },
+        "auth": {"password": "hunter2", "token": "tok-123"},
+    }
+
+    redacted = redact_secrets(body)
+
+    assert redacted["source"]["s3"]["bucketName"] == "my-bucket"
+    assert redacted["source"]["s3"]["accessKey"] == "***REDACTED***"
+    assert redacted["source"]["s3"]["secretKey"] == "***REDACTED***"
+    assert redacted["auth"]["password"] == "***REDACTED***"
+    assert redacted["auth"]["token"] == "***REDACTED***"
+    # original untouched
+    assert body["source"]["s3"]["secretKey"] == "shh-do-not-log-me"
+
+
+def test_redact_secrets_handles_lists_and_none():
+    assert redact_secrets(None) is None
+    assert redact_secrets([{"secretKey": "x"}, {"bucketName": "y"}]) == [
+        {"secretKey": "***REDACTED***"},
+        {"bucketName": "y"},
+    ]
