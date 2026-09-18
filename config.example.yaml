@@ -58,7 +58,14 @@ pag:
 
   hidden: false
   write_protected: false
-  sosapi_enabled: true    # exposes the repository over S3 so PDR can target it
+  # Exposes the repository over S3 so PDR can target it. REQUIRES the
+  # "Veeam SOSAPI" option to be enabled in the PAG license (check
+  # System > License in the PAG GUI) -- without it, this is silently
+  # ignored on creation and any attempt to flip it on an existing
+  # repository fails with a 500 "product license does not cover this
+  # function" (ModifyObjectRepository), since PATCHing an existing
+  # repository is itself a licensed function separate from creating one.
+  sosapi_enabled: true
 
 pdr:
   base_url: "https://hathor-1.ctie.etat.lu:3601"
