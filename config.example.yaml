@@ -65,24 +65,21 @@ pdr:
   timeout: 30
 
   # S3 credentials PDR uses to read from the COS bucket.
-  # IMPORTANT: this is the S3 *data* endpoint (object GET/PUT), which is
-  # NOT the same port as cos.base_url above (8337 is the Service API used
-  # only for bucket management: acl/firewall/notifications). Fill in the
-  # actual S3 endpoint/port for osiris-109-a-fe.ctie.etat.lu here.
+  # This is the S3 *data* endpoint (object GET/PUT), distinct from
+  # cos.base_url above (8337 is the Service API used only for bucket
+  # management: acl/firewall/notifications).
   source_s3:
-    server_url: "https://osiris-109-a-fe.ctie.etat.lu:CHANGE_ME"
+    server_url: "https://s3.govcloud.etat.lu:443"
     access_key: "${PDR_COS_ACCESS_KEY}"
     secret_key: "${PDR_COS_SECRET_KEY}"
     force_path_style: true
     signature_version: 4
 
   # S3 credentials PDR uses to write to the PAG repository (requires
-  # sosapi_enabled: true above).
-  # IMPORTANT: same caveat as above -- 4200 is PAG's admin UI/API port,
-  # not necessarily its S3 (SOSAPI) data port. Fill in the actual S3
-  # endpoint/port for scrat-1.ctie.etat.lu here.
+  # sosapi_enabled: true above). Distinct from pag.base_url above (4200
+  # is PAG's admin UI/API port; 4443 is its S3/SOSAPI data port).
   target_s3:
-    server_url: "https://scrat-1.ctie.etat.lu:CHANGE_ME"
+    server_url: "https://scrat-1.ctie.etat.lu:4443"
     access_key: "${PDR_PAG_ACCESS_KEY}"
     secret_key: "${PDR_PAG_SECRET_KEY}"
     force_path_style: true

@@ -40,22 +40,20 @@ Edit `config.yaml` and set the referenced environment variables (secrets
 are never stored in the YAML file itself, only `${VAR_NAME}` placeholders
 resolved from the environment at load time).
 
-`config.example.yaml` is pre-filled with this environment's known admin
+`config.example.yaml` is pre-filled with this environment's known
 endpoints:
 
-| System | Admin/Service API endpoint | Auth |
-| --- | --- | --- |
-| COS | `osiris-109-a-fe.ctie.etat.lu:8337` | basic |
-| PAG | `scrat-1.ctie.etat.lu:4200` | basic |
-| PDR | `hathor-1.ctie.etat.lu:3601` | basic |
+| System | Admin/Service API endpoint | S3 data-plane endpoint | Auth |
+| --- | --- | --- | --- |
+| COS | `osiris-109-a-fe.ctie.etat.lu:8337` | `s3.govcloud.etat.lu:443` | basic |
+| PAG | `scrat-1.ctie.etat.lu:4200` | `scrat-1.ctie.etat.lu:4443` | basic |
+| PDR | `hathor-1.ctie.etat.lu:3601` | n/a | basic |
 
-Two values still need to be filled in manually (`CHANGE_ME` in the
-example file): `pdr.source_s3.server_url` and `pdr.target_s3.server_url`.
-Those are the **S3 data-plane endpoints** PDR uses to actually read/write
-objects — they are not the same as the admin ports above (8337 is COS's
-Service API, used only for the acl/firewall/notifications management
-calls; 4200 is PAG's admin UI/API). Fill in the real S3 endpoint/port for
-each system before running the tool.
+The admin/service endpoints are used for bucket ACL/firewall/notifications
+(COS) and repository/task management (PAG/PDR). The S3 data-plane
+endpoints are what PDR actually connects to as `source_s3`/`target_s3` to
+copy objects — they run on different ports than the admin APIs, so don't
+mix them up.
 
 ## Run
 
