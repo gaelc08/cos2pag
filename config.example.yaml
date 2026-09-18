@@ -5,14 +5,15 @@
 # config.yaml (or point --config at your own copy) and fill it in.
 
 cos:
-  # <accesser>:8338 endpoint of the IBM COS System, container mode.
-  base_url: "https://cos-accesser.example.com:8338"
+  # Service API (bucket management: acl/firewall/notifications) accesser
+  # endpoint, container mode.
+  base_url: "https://osiris-109-a-fe.ctie.etat.lu:8337"
   auth:
-    type: bearer               # bearer | basic
-    token: "${COS_API_TOKEN}"
-    # type: basic
-    # username: "${COS_USERNAME}"
-    # password: "${COS_PASSWORD}"
+    type: basic
+    username: "${COS_USERNAME}"
+    password: "${COS_PASSWORD}"
+    # type: bearer
+    # token: "${COS_API_TOKEN}"
   verify_ssl: true
   timeout: 30
 
@@ -32,7 +33,7 @@ cos:
   allow_create_whitelist: false
 
 pag:
-  base_url: "https://pag.example.com"
+  base_url: "https://scrat-1.ctie.etat.lu:4200"
   auth:
     type: basic
     username: "${PAG_USERNAME}"
@@ -55,7 +56,7 @@ pag:
   sosapi_enabled: true    # exposes the repository over S3 so PDR can target it
 
 pdr:
-  base_url: "https://pdr.example.com"
+  base_url: "https://hathor-1.ctie.etat.lu:3601"
   auth:
     type: basic
     username: "${PDR_USERNAME}"
@@ -64,8 +65,12 @@ pdr:
   timeout: 30
 
   # S3 credentials PDR uses to read from the COS bucket.
+  # IMPORTANT: this is the S3 *data* endpoint (object GET/PUT), which is
+  # NOT the same port as cos.base_url above (8337 is the Service API used
+  # only for bucket management: acl/firewall/notifications). Fill in the
+  # actual S3 endpoint/port for osiris-109-a-fe.ctie.etat.lu here.
   source_s3:
-    server_url: "https://cos-accesser.example.com:8338"
+    server_url: "https://osiris-109-a-fe.ctie.etat.lu:CHANGE_ME"
     access_key: "${PDR_COS_ACCESS_KEY}"
     secret_key: "${PDR_COS_SECRET_KEY}"
     force_path_style: true
@@ -73,8 +78,11 @@ pdr:
 
   # S3 credentials PDR uses to write to the PAG repository (requires
   # sosapi_enabled: true above).
+  # IMPORTANT: same caveat as above -- 4200 is PAG's admin UI/API port,
+  # not necessarily its S3 (SOSAPI) data port. Fill in the actual S3
+  # endpoint/port for scrat-1.ctie.etat.lu here.
   target_s3:
-    server_url: "https://pag.example.com:8443"
+    server_url: "https://scrat-1.ctie.etat.lu:CHANGE_ME"
     access_key: "${PDR_PAG_ACCESS_KEY}"
     secret_key: "${PDR_PAG_SECRET_KEY}"
     force_path_style: true

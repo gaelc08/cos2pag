@@ -40,6 +40,23 @@ Edit `config.yaml` and set the referenced environment variables (secrets
 are never stored in the YAML file itself, only `${VAR_NAME}` placeholders
 resolved from the environment at load time).
 
+`config.example.yaml` is pre-filled with this environment's known admin
+endpoints:
+
+| System | Admin/Service API endpoint | Auth |
+| --- | --- | --- |
+| COS | `osiris-109-a-fe.ctie.etat.lu:8337` | basic |
+| PAG | `scrat-1.ctie.etat.lu:4200` | basic |
+| PDR | `hathor-1.ctie.etat.lu:3601` | basic |
+
+Two values still need to be filled in manually (`CHANGE_ME` in the
+example file): `pdr.source_s3.server_url` and `pdr.target_s3.server_url`.
+Those are the **S3 data-plane endpoints** PDR uses to actually read/write
+objects — they are not the same as the admin ports above (8337 is COS's
+Service API, used only for the acl/firewall/notifications management
+calls; 4200 is PAG's admin UI/API). Fill in the real S3 endpoint/port for
+each system before running the tool.
+
 ## Run
 
 ```
@@ -64,10 +81,9 @@ config if that lock-down is actually what you want.
 ## Notes on API references used
 
 - COS: *IBM Cloud Object Storage System — Container Mode Service API Guide
-  — Bucket Management* (v3.20.x). That guide does not document the
-  authentication scheme (it defers to the *Storage Account Management API
-  Developer Guide*); the tool supports both `basic` and `bearer` auth for
-  COS — set `cos.auth.type` to match what your accesser actually expects.
+  — Bucket Management* (v3.20.x). Confirmed to use HTTP basic auth in this
+  environment; the tool also supports `bearer` auth if that ever changes
+  (set `cos.auth.type`).
 - PAG: `pag-swagger.json` (PoINT Archival Gateway Administration API v1).
   A "bucket" is an Object Repository; the owner assigned to it is set via
   the `owner` field (`uuid` + `type`: `User`/`Group`/`ESP`).
