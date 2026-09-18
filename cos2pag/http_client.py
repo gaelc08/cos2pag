@@ -1,0 +1,58 @@
+"""Small HTTP helper shared by the COS / PAG / PDR clients."""
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import requests
+
+from .config import AuthConfig
+
+logger = logging.getLogger(__name__)
+
+
+class ApiError(Exception):
+    def __init__(self, method: str, url: str, status_code: int, body: str):
+        self.method = method
+        self.url = url
+        self.status_code = status_code
+        self.body = body
+        super().__init__(f"{method} {url} -> HTTP {status_code}: {body[:500]}")
+
+
+def build_session(auth: AuthConfig, verify_ssl: bool = True) -> requests.Session:
+    session = requests.Session()
+    session.verify = verify_ssl
+    if auth.type == "basic":
+        session.auth = (auth.username, auth.password)
+    elif auth.type == "bearer":
+        session.headers["Authorization"] = f"Bearer {auth.token}"
+    return session
+
+
+def request_json(
+    session: requests.Session,
+    method: str,
+    url: str,
+    timeout: int = 30,
+    dry_run: bool = False,
+    **kwargs: Any,
+) -> dict | list | None:
+    """Perform a request and return the parsed JSON body (or None for 204/empty).
+
+    In dry-run mode, mutating requests (anything but GET) are logged and not
+    actually sent.
+    """
+    if dry_run and method.upper() != "GET":
+        logger.info("[dry-run] %s %s json=%s", method, url, kwargs.get("json"))
+        return None
+
+    resp = session.request(method, url, timeout=timeout, **kwargs)
+    if resp.status_code >= 400:
+        raise ApiError(method, url, resp.status_code, resp.text)
+    if not resp.content:
+        return None
+    try:
+        return resp.json()
+    except ValueError:
+        return None

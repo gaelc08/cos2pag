@@ -1,0 +1,94 @@
+# cos2pag configuration.
+#
+# Any value written as ${VAR_NAME} is read from the environment at load
+# time -- put secrets there, not in this file. Copy this file to
+# config.yaml (or point --config at your own copy) and fill it in.
+
+cos:
+  # <accesser>:8338 endpoint of the IBM COS System, container mode.
+  base_url: "https://cos-accesser.example.com:8338"
+  auth:
+    type: bearer               # bearer | basic
+    token: "${COS_API_TOKEN}"
+    # type: basic
+    # username: "${COS_USERNAME}"
+    # password: "${COS_PASSWORD}"
+  verify_ssl: true
+  timeout: 30
+
+  # Backup service account to grant access to the bucket's ACL so it can
+  # be read for replication.
+  backup_service_account:
+    grantee: "${COS_BACKUP_SA_ID}"   # storage account id / service instance id
+    permission: "READ"               # READ | WRITE | READ_ACP | WRITE_ACP | FULL_CONTROL
+
+  # PDR's IP (CIDR) to add to the bucket's firewall allow-list.
+  pdr_ip: "203.0.113.10/32"
+
+  # Safety switch: if the bucket currently has NO allowed_ip whitelist at
+  # all (i.e. it is open to any IP), adding pdr_ip alone would instead
+  # CREATE a whitelist and lock the bucket down to only that IP. Leave
+  # this false unless that lock-down is actually what you want.
+  allow_create_whitelist: false
+
+pag:
+  base_url: "https://pag.example.com"
+  auth:
+    type: basic
+    username: "${PAG_USERNAME}"
+    password: "${PAG_PASSWORD}"
+  verify_ssl: true
+  timeout: 30
+
+  # Partition where the repository (bucket) must be created. Either the
+  # partition name or its uuid.
+  partition: "PARTITION-BACKUP-01"
+
+  # PAG user/group/ESP that PDR authenticates as; the created repository
+  # is owned by this principal so PDR can write replicated objects to it.
+  owner:
+    uuid: "${PAG_PDR_OWNER_UUID}"
+    type: "User"          # User | Group | ESP
+
+  hidden: false
+  write_protected: false
+  sosapi_enabled: true    # exposes the repository over S3 so PDR can target it
+
+pdr:
+  base_url: "https://pdr.example.com"
+  auth:
+    type: basic
+    username: "${PDR_USERNAME}"
+    password: "${PDR_PASSWORD}"
+  verify_ssl: true
+  timeout: 30
+
+  # S3 credentials PDR uses to read from the COS bucket.
+  source_s3:
+    server_url: "https://cos-accesser.example.com:8338"
+    access_key: "${PDR_COS_ACCESS_KEY}"
+    secret_key: "${PDR_COS_SECRET_KEY}"
+    force_path_style: true
+    signature_version: 4
+
+  # S3 credentials PDR uses to write to the PAG repository (requires
+  # sosapi_enabled: true above).
+  target_s3:
+    server_url: "https://pag.example.com:8443"
+    access_key: "${PDR_PAG_ACCESS_KEY}"
+    secret_key: "${PDR_PAG_SECRET_KEY}"
+    force_path_style: true
+    signature_version: 4
+
+  copy_options:
+    acl: true
+    tags: true
+    metadata: true
+    object_lock: false
+    max_parallel_jobs: 4
+
+  schedule:
+    enabled: false
+
+  # Kick off an initial replication job right after the task is created.
+  auto_start_job: false
