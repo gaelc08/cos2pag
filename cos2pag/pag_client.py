@@ -100,11 +100,14 @@ class PagClient:
         hidden: bool | None = None,
         write_protected: bool | None = None,
         sosapi_enabled: bool | None = None,
-    ) -> tuple[dict[str, Any] | None, bool]:
-        """Create the repository if missing, otherwise patch its owner.
+    ) -> tuple[dict[str, Any] | None, str]:
+        """Create the repository if missing, or patch it only if something
+        actually differs from an existing one.
 
-        Returns ``(repository, created)``. In dry-run mode ``repository``
-        may be ``None`` since no request is actually sent.
+        Returns ``(repository, action)`` where action is one of
+        "created", "updated", "unchanged". Some PAG licenses don't cover
+        `PATCH` on an existing repository (`ModifyObjectRepository`), so
+        this avoids calling it at all when there's nothing to change.
         """
         existing = self.find_repository(partition_uuid, name)
         body: dict[str, Any] = {"name": name, "owner": owner}
@@ -116,8 +119,19 @@ class PagClient:
             body["sosapiEnabled"] = sosapi_enabled
 
         if existing is None:
-            return self.create_repository(partition_uuid, body), True
-        return self.update_repository(partition_uuid, existing["uuid"], body), False
+            return self.create_repository(partition_uuid, body), "created"
+
+        existing_owner = existing.get("owner") or {}
+        needs_update = (
+            existing_owner.get("uuid") != owner.get("uuid")
+            or existing_owner.get("type") != owner.get("type")
+            or (hidden is not None and existing.get("hidden") != hidden)
+            or (write_protected is not None and existing.get("writeProtected") != write_protected)
+            or (sosapi_enabled is not None and existing.get("sosapiEnabled") != sosapi_enabled)
+        )
+        if not needs_update:
+            return existing, "unchanged"
+        return self.update_repository(partition_uuid, existing["uuid"], body), "updated"
 
 
 __all__ = ["PagClient", "ApiError"]

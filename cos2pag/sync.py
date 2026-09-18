@@ -142,7 +142,7 @@ def _sync_pag_repository(pag_cfg: dict, bucket_name: str, dry_run: bool, report:
     owner = require(pag_cfg, "owner", "pag")
 
     partition = client.find_partition(partition_ref)
-    repo, created = client.ensure_repository(
+    repo, action = client.ensure_repository(
         partition["uuid"],
         bucket_name,
         owner,
@@ -150,11 +150,11 @@ def _sync_pag_repository(pag_cfg: dict, bucket_name: str, dry_run: bool, report:
         write_protected=pag_cfg.get("write_protected"),
         sosapi_enabled=pag_cfg.get("sosapi_enabled", True),
     )
-    report.add(
-        "pag.repository",
-        changed=True,
-        detail=f"{'created' if created else 'updated owner of existing'} repository '{bucket_name}' in partition '{partition.get('name')}'",
-    )
+    detail = f"{action} repository '{bucket_name}' in partition '{partition.get('name')}'"
+    if action == "unchanged":
+        report.add("pag.repository", changed=False, skipped=True, detail=detail)
+    else:
+        report.add("pag.repository", changed=True, detail=detail)
     return repo
 
 

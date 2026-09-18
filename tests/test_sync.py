@@ -44,7 +44,7 @@ def fake_clients(monkeypatch):
 
     pag_client = MagicMock()
     pag_client.find_partition.return_value = {"uuid": "part-uuid", "name": "PART-01"}
-    pag_client.ensure_repository.return_value = ({"uuid": "repo-uuid", "name": BUCKET}, True)
+    pag_client.ensure_repository.return_value = ({"uuid": "repo-uuid", "name": BUCKET}, "created")
 
     pdr_client = MagicMock()
     pdr_client.ensure_task.return_value = ({"id": 42, "alias": BUCKET}, True)
@@ -143,3 +143,16 @@ def test_sync_bucket_refuses_to_create_whitelist_from_scratch(fake_clients):
     fake_clients["cos"].patch_bucket.assert_not_called()
     step = next(s for s in report.steps if s.name == "cos.firewall")
     assert step.skipped is True
+
+
+def test_sync_bucket_skips_pag_patch_when_repository_unchanged(fake_clients):
+    fake_clients["pag"].ensure_repository.return_value = (
+        {"uuid": "repo-uuid", "name": BUCKET},
+        "unchanged",
+    )
+
+    report = sync_bucket(base_config(), BUCKET)
+
+    step = next(s for s in report.steps if s.name == "pag.repository")
+    assert step.skipped is True
+    assert step.changed is False
