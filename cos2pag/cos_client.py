@@ -6,11 +6,24 @@ Guide - Bucket Management" (v3.20.x). Base command is
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from email.utils import format_datetime
 from typing import Any
 
 import requests
 
 from .http_client import request_json
+
+
+def _to_http_date(iso_timestamp: str) -> str:
+    """Convert an RFC3339 timestamp (as returned in `time_updated`, e.g.
+    "2026-09-18T15:02:44.609Z") to the RFC7231 HTTP-date format the
+    `If-Unmodified-Since` request header requires (e.g.
+    "Wed, 18 Sep 2026 15:02:44 GMT"). Sending the RFC3339 string as-is
+    makes the server reject the PATCH with a generic 400 Bad Request.
+    """
+    dt = datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
+    return format_datetime(dt.astimezone(timezone.utc), usegmt=True)
 
 
 def acl_map_to_pairs(acl_map: dict[str, list[str]] | None) -> list[dict[str, str]]:
@@ -85,7 +98,7 @@ class CosClient:
     ) -> dict[str, Any] | None:
         headers = {}
         if if_unmodified_since:
-            headers["If-Unmodified-Since"] = if_unmodified_since
+            headers["If-Unmodified-Since"] = _to_http_date(if_unmodified_since)
         return request_json(
             self.session,
             "PATCH",

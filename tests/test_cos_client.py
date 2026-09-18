@@ -1,4 +1,4 @@
-from cos2pag.cos_client import acl_map_to_pairs, merge_acl, merge_allowed_ip
+from cos2pag.cos_client import _to_http_date, acl_map_to_pairs, merge_acl, merge_allowed_ip
 
 
 def test_acl_map_to_pairs_expands_multiple_permissions():
@@ -65,3 +65,11 @@ def test_merge_allowed_ip_can_be_forced_to_create_whitelist():
     new_list, changed = merge_allowed_ip(None, "203.0.113.10/32", allow_create_whitelist=True)
     assert changed is True
     assert new_list == ["203.0.113.10/32"]
+
+
+def test_to_http_date_converts_rfc3339_with_fractional_seconds():
+    assert _to_http_date("2026-09-18T15:02:44.609Z") == "Fri, 18 Sep 2026 15:02:44 GMT"
+
+
+def test_to_http_date_converts_rfc3339_without_fractional_seconds():
+    assert _to_http_date("2019-04-15T08:23:42Z") == "Mon, 15 Apr 2019 08:23:42 GMT"
