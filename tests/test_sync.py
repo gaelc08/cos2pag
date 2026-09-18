@@ -14,7 +14,9 @@ def base_config():
         "cos": {
             "base_url": "https://cos.example.com:8338",
             "auth": {"type": "bearer", "token": "t"},
-            "backup_service_account": {"grantee": "backup-sa", "permission": "READ"},
+            "container_vaults": {
+                "CV1": {"backup_service_account": {"grantee": "backup-sa", "permission": "READ"}},
+            },
             "pdr_ip": "203.0.113.10/32",
         },
         "pag": {
@@ -40,6 +42,7 @@ def fake_clients(monkeypatch):
         "firewall": {"allowed_ip": ["192.168.1.0/24"]},
         "notifications": {},
         "time_updated": "2024-01-01T00:00:00Z",
+        "storage_location": "CV1",
     }
 
     pag_client = MagicMock()
@@ -101,6 +104,7 @@ def test_sync_bucket_skips_cos_patch_when_already_up_to_date(fake_clients):
         "firewall": {"allowed_ip": ["203.0.113.10/32"]},
         "notifications": {"topic": BUCKET},
         "time_updated": "2024-01-01T00:00:00Z",
+        "storage_location": "CV1",
     }
 
     report = sync_bucket(base_config(), BUCKET)
@@ -136,6 +140,7 @@ def test_sync_bucket_refuses_to_create_whitelist_from_scratch(fake_clients):
         "firewall": {},
         "notifications": {"topic": BUCKET},
         "time_updated": "2024-01-01T00:00:00Z",
+        "storage_location": "CV1",
     }
 
     report = sync_bucket(base_config(), BUCKET)
@@ -143,3 +148,38 @@ def test_sync_bucket_refuses_to_create_whitelist_from_scratch(fake_clients):
     fake_clients["cos"].patch_bucket.assert_not_called()
     step = next(s for s in report.steps if s.name == "cos.firewall")
     assert step.skipped is True
+
+
+def test_sync_bucket_picks_backup_sa_by_container_vault(fake_clients):
+    config = base_config()
+    config["cos"]["container_vaults"]["CV2"] = {
+        "backup_service_account": {"grantee": "backup-sa-cv2", "permission": "READ"}
+    }
+    fake_clients["cos"].get_bucket.return_value = {
+        "acl": {},
+        "firewall": {"allowed_ip": ["192.168.1.0/24"]},
+        "notifications": {},
+        "time_updated": "2024-01-01T00:00:00Z",
+        "storage_location": "CV2",
+    }
+
+    sync_bucket(config, BUCKET)
+
+    body = fake_clients["cos"].patch_bucket.call_args_list[0].args[1]
+    assert {"grantee": "backup-sa-cv2", "permission": "READ"} in body["acl"]
+    assert {"grantee": "backup-sa", "permission": "READ"} not in body["acl"]
+
+
+def test_sync_bucket_fails_clearly_for_unknown_container_vault(fake_clients):
+    from cos2pag.config import ConfigError
+
+    fake_clients["cos"].get_bucket.return_value = {
+        "acl": {},
+        "firewall": {"allowed_ip": ["192.168.1.0/24"]},
+        "notifications": {},
+        "time_updated": "2024-01-01T00:00:00Z",
+        "storage_location": "UNKNOWN-CV",
+    }
+
+    with pytest.raises(ConfigError):
+        sync_bucket(base_config(), BUCKET)
