@@ -34,11 +34,16 @@ pip install -r requirements.txt
 
 ```
 cp config.example.yaml config.yaml
+cp .env.example .env
 ```
 
-Edit `config.yaml` and set the referenced environment variables (secrets
-are never stored in the YAML file itself, only `${VAR_NAME}` placeholders
-resolved from the environment at load time).
+Edit `config.yaml` for anything environment-specific (endpoints,
+partition, owner, etc. — see below), and edit `.env` for secrets (never
+committed, listed in `.gitignore`). `config.yaml`'s `${VAR_NAME}`
+placeholders are resolved from the environment at load time, and
+`python -m cos2pag` loads `.env` into the environment automatically
+before that happens — no need to `export` anything by hand each time.
+Use `--env-file <path>` if you keep secrets somewhere other than `.env`.
 
 `config.example.yaml` is pre-filled with this environment's known
 endpoints:

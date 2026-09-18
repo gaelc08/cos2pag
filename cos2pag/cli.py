@@ -4,6 +4,8 @@ import argparse
 import logging
 import sys
 
+from dotenv import load_dotenv
+
 from .config import ConfigError, load_config
 from .http_client import ApiError
 from .sync import sync_bucket
@@ -16,6 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("bucket_name", help="Name of the COS bucket to synchronize (also used as the PAG repository name)")
     parser.add_argument("-c", "--config", default="config.yaml", help="Path to the YAML config file (default: config.yaml)")
+    parser.add_argument("--env-file", default=".env", help="Path to a .env file with secrets (default: .env in the current directory; silently skipped if absent)")
     parser.add_argument("--dry-run", action="store_true", help="Log what would be done without sending any mutating request")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
     return parser
@@ -29,6 +32,11 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
     )
+
+    # Populate os.environ from a .env file (if present) before the YAML
+    # config's ${VAR} placeholders are resolved. Existing environment
+    # variables always take precedence over the .env file.
+    load_dotenv(args.env_file)
 
     try:
         config = load_config(args.config)
