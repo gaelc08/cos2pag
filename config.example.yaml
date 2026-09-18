@@ -14,7 +14,11 @@ cos:
     password: "${COS_PASSWORD}"
     # type: bearer
     # token: "${COS_API_TOKEN}"
-  verify_ssl: true
+  # This environment's appliances use self-signed certs (CN doesn't match
+  # the hostname), so verification is off here. Set this to a CA bundle
+  # path instead (e.g. "/etc/ssl/certs/internal-ca.pem") if you'd rather
+  # keep verification on with the appliance's real certificate.
+  verify_ssl: false
   timeout: 30
 
   # Backup service account to grant access to the bucket's ACL so it can
@@ -38,7 +42,7 @@ pag:
     type: basic
     username: "${PAG_USERNAME}"
     password: "${PAG_PASSWORD}"
-  verify_ssl: true
+  verify_ssl: false  # see cos.verify_ssl note above
   timeout: 30
 
   # Partition where the repository (bucket) must be created. Either the
@@ -61,7 +65,7 @@ pdr:
     type: basic
     username: "${PDR_USERNAME}"
     password: "${PDR_PASSWORD}"
-  verify_ssl: true
+  verify_ssl: false  # see cos.verify_ssl note above
   timeout: 30
 
   # S3 credentials PDR uses to read from the COS bucket.

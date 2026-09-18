@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 import requests
+import urllib3
 
 from .config import AuthConfig
 
@@ -20,9 +21,13 @@ class ApiError(Exception):
         super().__init__(f"{method} {url} -> HTTP {status_code}: {body[:500]}")
 
 
-def build_session(auth: AuthConfig, verify_ssl: bool = True) -> requests.Session:
+def build_session(auth: AuthConfig, verify_ssl: bool | str = True) -> requests.Session:
     session = requests.Session()
     session.verify = verify_ssl
+    if verify_ssl is False:
+        # Internal appliances here run with self-signed certs; don't spam
+        # the logs with a warning for a choice the config made on purpose.
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     if auth.type == "basic":
         session.auth = (auth.username, auth.password)
     elif auth.type == "bearer":
