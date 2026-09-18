@@ -52,7 +52,7 @@ pag:
   # PAG user/group/ESP that PDR authenticates as; the created repository
   # is owned by this principal so PDR can write replicated objects to it.
   owner:
-    uuid: "${PAG_PDR_OWNER_UUID}"
+    uuid: "91a7b65a-608a-f2bf-1d7d-cdad82383e7f"   # PAG user "pdr"
     type: "User"          # User | Group | ESP
 
   hidden: false
