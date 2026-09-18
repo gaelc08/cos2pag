@@ -34,9 +34,11 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # Populate os.environ from a .env file (if present) before the YAML
-    # config's ${VAR} placeholders are resolved. Existing environment
-    # variables always take precedence over the .env file.
-    load_dotenv(args.env_file)
+    # config's ${VAR} placeholders are resolved. override=True so .env is
+    # always authoritative -- otherwise a variable already exported in the
+    # shell (e.g. from an earlier `source .env` done to test with curl)
+    # would silently shadow a since-corrected value in the file.
+    load_dotenv(args.env_file, override=True)
 
     try:
         config = load_config(args.config)
