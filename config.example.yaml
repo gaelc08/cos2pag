@@ -112,7 +112,7 @@ pdr:
     max_parallel_jobs: 2
     check_destination: false
     enable_deletion: true
-    delete_delay_days: 30   # retention before a source deletion is mirrored -- 30 / 60 / 90, confirm with the team
+    delete_delay_days: 30   # fixed delay, in days, before a source deletion is mirrored to the target
 
   schedule:
     enabled: true
