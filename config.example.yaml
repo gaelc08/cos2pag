@@ -46,14 +46,11 @@ pag:
   verify_ssl: false  # see cos.verify_ssl note above
   timeout: 30
 
-  # One partition per tenant. The tenant name is matched against existing
-  # PAG partitions by the longest prefix of the bucket name (e.g. bucket
-  # "ctie-001-gael-nextcloud" matches existing partition "CTIE-001",
-  # case-insensitively) -- there's no fixed number of hyphen-separated
-  # segments across tenants (e.g. "ABP", "CTIE-001", "eADEM-TRAIN-1" are
-  # all real tenant names), so this can only find tenants that already
-  # have a partition. For a genuinely new tenant, pass `--tenant <name>`
-  # on the CLI to name it explicitly.
+  # One partition per tenant. The tenant name always comes from the
+  # required `--tenant` CLI argument, never guessed from the bucket name:
+  # real tenant codes are ambiguous prefixes of each other (e.g. "ME",
+  # "ME-SR", "ME-SRE", "ME-SRE2"; "ACT", "ACT-GEOPORTAL", "ACT-ILDG"), so
+  # auto-derivation risks silently picking the wrong tenant.
 
   # If the tenant's partition doesn't exist yet, it is created with these
   # settings (a PartitionInformationPatch body, "name" excluded -- that's

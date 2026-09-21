@@ -14,15 +14,12 @@ For a given bucket name, running the tool does:
      replaces them wholesale on PATCH).
    - `PATCH` the bucket's `notifications.topic` to the bucket's own name.
 2. **PAG** (`/api/partitions`, `/api/partitions/{partitionUuid}/repositories`)
-   - Resolve the tenant's partition: matched against existing PAG
-     partitions by the longest prefix of the bucket name
-     (case-insensitively — e.g. bucket `ctie-001-gael-nextcloud` matches
-     existing partition `CTIE-001`). There's no fixed number of
-     hyphen-separated segments across tenants (`ABP`, `CTIE-001`,
-     `eADEM-TRAIN-1` are all real tenant names), so this only finds
-     tenants that already have a partition; for a brand-new tenant, pass
-     `--tenant <name>` to name it explicitly. If that partition doesn't
-     exist yet, it's created with the settings in
+   - Use the partition named by the required `--tenant` argument (one
+     partition per tenant). This is never guessed from the bucket name:
+     real tenant codes share common prefixes (`ME`, `ME-SR`, `ME-SRE`,
+     `ME-SRE2`; `ACT`, `ACT-GEOPORTAL`, `ACT-ILDG`; ...), so deriving it
+     automatically risks silently picking the wrong tenant. If that
+     partition doesn't exist yet, it's created with the settings in
      `pag.new_partition_defaults` (a static config block you fill in
      once, e.g. copied from an existing reference partition like
      "costotape") — only the name differs.
@@ -91,20 +88,17 @@ mix them up.
 ## Run
 
 ```
-python -m cos2pag my-bucket-name --config config.yaml
+python -m cos2pag my-bucket-name --tenant CTIE-001 --config config.yaml
 ```
+
+`--tenant` is required (the PAG partition/tenant name) — it's never
+guessed from the bucket name, since real tenant codes are ambiguous
+prefixes of each other (see above). If that partition doesn't exist yet,
+this run creates it.
 
 Add `--dry-run` to see what would be sent without making any mutating
 request (`GET`s are still executed so the plan reflects real current
-state), `-v` for debug logging, and `--tenant <name>` to force the PAG
-partition/tenant name instead of deriving it from the bucket name.
-
-**First bucket for a given tenant**: since tenant matching only works
-against partitions that already exist in PAG, the very first bucket for
-a new tenant needs `--tenant <NAME>` explicitly (e.g.
-`--tenant CTIE-001`) — that also creates the tenant's partition. Every
-later bucket for that same tenant is then auto-matched from the bucket
-name prefix, no `--tenant` needed.
+state), and `-v` for debug logging.
 
 ## Important safety note on the IP whitelist
 

@@ -1,7 +1,14 @@
 import os
 from unittest.mock import MagicMock
 
+import pytest
+
 from cos2pag import cli
+
+
+def test_tenant_argument_is_required():
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(["my-bucket"])
 
 
 def test_main_loads_env_file_before_config(tmp_path, monkeypatch):
@@ -14,7 +21,7 @@ def test_main_loads_env_file_before_config(tmp_path, monkeypatch):
 
     captured = {}
 
-    def fake_sync_bucket(config, bucket_name, dry_run=False, tenant=None):
+    def fake_sync_bucket(config, bucket_name, tenant, dry_run=False):
         captured["config"] = config
         report = MagicMock()
         report.steps = []
@@ -22,7 +29,7 @@ def test_main_loads_env_file_before_config(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cli, "sync_bucket", fake_sync_bucket)
 
-    exit_code = cli.main(["my-bucket"])
+    exit_code = cli.main(["my-bucket", "--tenant", "MY-TENANT"])
 
     assert exit_code == 0
     assert captured["config"]["cos"]["token"] == "from-dotenv"
@@ -42,7 +49,7 @@ def test_main_env_file_overrides_stale_shell_export(tmp_path, monkeypatch):
 
     captured = {}
 
-    def fake_sync_bucket(config, bucket_name, dry_run=False, tenant=None):
+    def fake_sync_bucket(config, bucket_name, tenant, dry_run=False):
         captured["config"] = config
         report = MagicMock()
         report.steps = []
@@ -50,6 +57,6 @@ def test_main_env_file_overrides_stale_shell_export(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cli, "sync_bucket", fake_sync_bucket)
 
-    cli.main(["my-bucket"])
+    cli.main(["my-bucket", "--tenant", "MY-TENANT"])
 
     assert captured["config"]["cos"]["token"] == "corrected-value"

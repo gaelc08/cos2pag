@@ -4,31 +4,10 @@ import pytest
 
 from cos2pag import sync as sync_module
 from cos2pag.http_client import ApiError
-from cos2pag.sync import derive_tenant, sync_bucket
+from cos2pag.sync import sync_bucket
 
 BUCKET = "my-bucket"
-
-
-def test_derive_tenant_matches_known_tenant_case_insensitively():
-    assert derive_tenant("ctie-001-gael-nextcloud", ["CTIE-001", "ABP"]) == "CTIE-001"
-
-
-def test_derive_tenant_picks_longest_most_specific_match():
-    # "CTIE" would also match as a prefix, but "CTIE-001" is more specific.
-    assert derive_tenant("ctie-001-gael-nextcloud", ["CTIE", "CTIE-001"]) == "CTIE-001"
-
-
-def test_derive_tenant_matches_exact_bucket_name_as_tenant():
-    assert derive_tenant("abp", ["ABP", "CTIE-001"]) == "ABP"
-
-
-def test_derive_tenant_returns_none_when_no_known_tenant_matches():
-    assert derive_tenant("unknown-bucket-name", ["ABP", "CTIE-001"]) is None
-
-
-def test_derive_tenant_does_not_match_on_partial_word_without_hyphen_boundary():
-    # "AB" must not match "ABP-something" style false positives.
-    assert derive_tenant("abpxyz-bucket", ["ABP"]) is None
+TENANT = "MY-TENANT"
 
 
 def base_config():
@@ -65,8 +44,7 @@ def fake_clients(monkeypatch):
     }
 
     pag_client = MagicMock()
-    pag_client.list_partitions.return_value = [{"uuid": "part-uuid", "name": "my"}]
-    pag_client.ensure_partition.return_value = ({"uuid": "part-uuid", "name": "my"}, "found")
+    pag_client.ensure_partition.return_value = ({"uuid": "part-uuid", "name": TENANT}, "found")
     pag_client.ensure_repository.return_value = ({"uuid": "repo-uuid", "name": BUCKET}, "created")
 
     pdr_client = MagicMock()
@@ -80,7 +58,7 @@ def fake_clients(monkeypatch):
 
 
 def test_sync_bucket_full_happy_path(fake_clients):
-    report = sync_bucket(base_config(), BUCKET)
+    report = sync_bucket(base_config(), BUCKET, TENANT)
 
     cos_client = fake_clients["cos"]
     patch_calls = cos_client.patch_bucket.call_args_list
@@ -96,6 +74,10 @@ def test_sync_bucket_full_happy_path(fake_clients):
     assert notif_call.args[1] == {"notifications": {"topic": BUCKET}}
 
     pag_client = fake_clients["pag"]
+    pag_client.ensure_partition.assert_called_once()
+    partition_args, _ = pag_client.ensure_partition.call_args
+    assert partition_args[0] == TENANT
+
     pag_client.ensure_repository.assert_called_once()
     args, kwargs = pag_client.ensure_repository.call_args
     assert args[0] == "part-uuid"
@@ -127,7 +109,7 @@ def test_sync_bucket_skips_cos_patch_when_already_up_to_date(fake_clients):
         "time_updated": "2024-01-01T00:00:00Z",
     }
 
-    report = sync_bucket(base_config(), BUCKET)
+    report = sync_bucket(base_config(), BUCKET, TENANT)
 
     fake_clients["cos"].patch_bucket.assert_not_called()
     step = next(s for s in report.steps if s.name == "cos.acl_and_firewall")
@@ -136,7 +118,7 @@ def test_sync_bucket_skips_cos_patch_when_already_up_to_date(fake_clients):
 
 def test_sync_bucket_reuses_existing_pdr_task(fake_clients):
     fake_clients["pdr"].ensure_task.return_value = ({"id": 42, "alias": BUCKET}, "unchanged")
-    report = sync_bucket(base_config(), BUCKET)
+    report = sync_bucket(base_config(), BUCKET, TENANT)
     step = next(s for s in report.steps if s.name == "pdr.task")
     assert step.skipped is True
     assert step.changed is False
@@ -144,7 +126,7 @@ def test_sync_bucket_reuses_existing_pdr_task(fake_clients):
 
 def test_sync_bucket_reports_updated_pdr_task_as_changed(fake_clients):
     fake_clients["pdr"].ensure_task.return_value = ({"id": 42, "alias": BUCKET}, "updated")
-    report = sync_bucket(base_config(), BUCKET)
+    report = sync_bucket(base_config(), BUCKET, TENANT)
     step = next(s for s in report.steps if s.name == "pdr.task")
     assert step.skipped is False
     assert step.changed is True
@@ -156,7 +138,7 @@ def test_sync_bucket_tolerates_notifications_rejected_by_cos(fake_clients):
         ApiError("PATCH", "https://cos.example.com/container/x", 400, "MalformedNotificationsError"),
     ]
 
-    report = sync_bucket(base_config(), BUCKET)
+    report = sync_bucket(base_config(), BUCKET, TENANT)
 
     step = next(s for s in report.steps if s.name == "cos.notifications")
     assert step.skipped is True
@@ -170,7 +152,7 @@ def test_sync_bucket_refuses_to_create_whitelist_from_scratch(fake_clients):
         "time_updated": "2024-01-01T00:00:00Z",
     }
 
-    report = sync_bucket(base_config(), BUCKET)
+    report = sync_bucket(base_config(), BUCKET, TENANT)
 
     fake_clients["cos"].patch_bucket.assert_not_called()
     step = next(s for s in report.steps if s.name == "cos.firewall")
@@ -183,7 +165,7 @@ def test_sync_bucket_skips_pag_patch_when_repository_unchanged(fake_clients):
         "unchanged",
     )
 
-    report = sync_bucket(base_config(), BUCKET)
+    report = sync_bucket(base_config(), BUCKET, TENANT)
 
     step = next(s for s in report.steps if s.name == "pag.repository")
     assert step.skipped is True
@@ -195,7 +177,7 @@ def test_sync_pdr_task_includes_max_error_retry_when_configured(fake_clients):
     config["pdr"]["source_s3"]["max_error_retry"] = 2
     config["pdr"]["target_s3"]["max_error_retry"] = 2
 
-    sync_bucket(config, BUCKET)
+    sync_bucket(config, BUCKET, TENANT)
 
     (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
     assert task_body["source"]["maxErrorRetry"] == 2
@@ -203,7 +185,7 @@ def test_sync_pdr_task_includes_max_error_retry_when_configured(fake_clients):
 
 
 def test_sync_pdr_task_omits_max_error_retry_when_not_configured(fake_clients):
-    sync_bucket(base_config(), BUCKET)
+    sync_bucket(base_config(), BUCKET, TENANT)
 
     (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
     assert "maxErrorRetry" not in task_body["source"]
@@ -222,7 +204,7 @@ def test_sync_pdr_task_includes_kafka_notifications_defaulting_topic_to_bucket_n
         },
     }
 
-    sync_bucket(config, BUCKET)
+    sync_bucket(config, BUCKET, TENANT)
 
     (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
     assert task_body["notifications"] == {
@@ -245,7 +227,7 @@ def test_sync_pdr_task_notifications_topic_can_be_overridden(fake_clients):
         "kafka": {"topic": "fixed-topic"},
     }
 
-    sync_bucket(config, BUCKET)
+    sync_bucket(config, BUCKET, TENANT)
 
     (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
     assert task_body["notifications"]["kafka"]["topic"] == "fixed-topic"
@@ -255,47 +237,32 @@ def test_sync_pdr_task_omits_notifications_when_disabled(fake_clients):
     config = base_config()
     config["pdr"]["notifications"] = {"enabled": False}
 
-    sync_bucket(config, BUCKET)
+    sync_bucket(config, BUCKET, TENANT)
 
     (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
     assert "notifications" not in task_body
 
 
-def test_sync_bucket_derives_tenant_by_matching_existing_partitions(fake_clients):
-    fake_clients["pag"].list_partitions.return_value = [{"name": "CTIE-001"}, {"name": "ABP"}]
+def test_sync_bucket_requires_tenant_argument():
+    with pytest.raises(TypeError):
+        sync_bucket(base_config(), BUCKET)
 
-    sync_bucket(base_config(), "ctie-001-gael-nextcloud")
 
-    fake_clients["pag"].ensure_partition.assert_called_once()
+def test_sync_bucket_uses_given_tenant_verbatim(fake_clients):
+    sync_bucket(base_config(), "ctie-001-gael-nextcloud", "CTIE-001")
+
     args, kwargs = fake_clients["pag"].ensure_partition.call_args
     assert args[0] == "CTIE-001"
     assert args[1] == {"devType": "Tape", "storageClassTypes": ["Standard"]}
 
 
-def test_sync_bucket_raises_clear_error_for_unmatched_new_tenant(fake_clients):
-    fake_clients["pag"].list_partitions.return_value = [{"name": "ABP"}]
-
-    from cos2pag.config import ConfigError
-
-    with pytest.raises(ConfigError):
-        sync_bucket(base_config(), "brand-new-tenant-bucket")
-
-
-def test_sync_bucket_explicit_tenant_overrides_derivation(fake_clients):
-    sync_bucket(base_config(), "ctie-001-gael-nextcloud", tenant="forced-tenant")
-
-    fake_clients["pag"].list_partitions.assert_not_called()
-    args, kwargs = fake_clients["pag"].ensure_partition.call_args
-    assert args[0] == "forced-tenant"
-
-
 def test_sync_bucket_reports_partition_creation_as_changed(fake_clients):
     fake_clients["pag"].ensure_partition.return_value = (
-        {"uuid": "new-part-uuid", "name": "ctie-001"},
+        {"uuid": "new-part-uuid", "name": TENANT},
         "created",
     )
 
-    report = sync_bucket(base_config(), BUCKET)
+    report = sync_bucket(base_config(), BUCKET, TENANT)
 
     step = next(s for s in report.steps if s.name == "pag.partition")
     assert step.changed is True
@@ -303,7 +270,7 @@ def test_sync_bucket_reports_partition_creation_as_changed(fake_clients):
 
 
 def test_sync_bucket_reports_existing_partition_as_skipped(fake_clients):
-    report = sync_bucket(base_config(), BUCKET)  # fixture default action is "found"
+    report = sync_bucket(base_config(), BUCKET, TENANT)  # fixture default action is "found"
 
     step = next(s for s in report.steps if s.name == "pag.partition")
     assert step.changed is False
@@ -313,7 +280,7 @@ def test_sync_bucket_reports_existing_partition_as_skipped(fake_clients):
 def test_sync_bucket_handles_dry_run_partition_creation_without_uuid(fake_clients):
     fake_clients["pag"].ensure_partition.return_value = (None, "created")
 
-    report = sync_bucket(base_config(), BUCKET, dry_run=True)
+    report = sync_bucket(base_config(), BUCKET, TENANT, dry_run=True)
 
     fake_clients["pag"].ensure_repository.assert_not_called()
     repo_step = next(s for s in report.steps if s.name == "pag.repository")
