@@ -57,32 +57,24 @@ pag:
 
   # If the tenant's partition doesn't exist yet, it is created with these
   # settings (a PartitionInformationPatch body, "name" excluded -- that's
-  # set to the tenant name automatically). Fill this in once by copying
-  # the relevant fields from an existing reference partition (e.g.
-  # "costotape"): GET /api/partitions on the PAG admin API, find that
-  # partition in the response, and copy over writeProtected,
-  # storageClassTypes, devType, devCodeRate, devAllocStrat,
-  # devAllocThreshold, devAllocParallelism, devAllocMediaPref,
-  # devAllocMediaAlt, devAllocSrcPrio, devAllocSrcLimit, cryptLocked,
-  # cryptMode, cryptAlgo, pstBufCfgPresent, optionForceHighAvailability,
-  # optionAllowReducedRedundancy. Everything below is a placeholder --
-  # replace with costotape's actual values.
+  # set to the tenant name automatically). Copied from the real
+  # "costotape" partition (GET /api/partitions on the PAG admin API).
   new_partition_defaults:
     writeProtected: false
-    storageClassTypes: ["CHANGE_ME"]
-    devType: "CHANGE_ME"
-    devCodeRate: "CHANGE_ME"
-    devAllocStrat: "CHANGE_ME"
+    storageClassTypes: "TapeOnly"
+    devType: "MC_T_GENERIC"
+    devCodeRate: "CodeRate_1_2"
+    devAllocStrat: "Ascending"
     devAllocThreshold: 0
     devAllocParallelism: 1
-    devAllocMediaPref: "CHANGE_ME"
-    devAllocMediaAlt: "CHANGE_ME"
-    devAllocSrcPrio: 0
+    devAllocMediaPref: "Unspecified"
+    devAllocMediaAlt: "Unspecified"
+    devAllocSrcPrio: 1
     devAllocSrcLimit: []
     cryptLocked: false
     cryptMode: "Off"
-    cryptAlgo: "CHANGE_ME"
-    pstBufCfgPresent: false
+    cryptAlgo: "Off"
+    pstBufCfgPresent: true
     optionForceHighAvailability: false
     optionAllowReducedRedundancy: false
 
