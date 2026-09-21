@@ -99,15 +99,6 @@ pag:
 
   hidden: false
   write_protected: false
-  # "SOSAPI" here is a Veeam-specific protocol extension on top of S3
-  # (used by Veeam Backup & Replication's object storage integration),
-  # gated by a separate "Veeam SOSAPI" license option -- it is NOT
-  # required for plain S3 access. The repository is reachable over
-  # standard S3 (what PDR uses) regardless of this flag. Leave it false
-  # unless you specifically need the Veeam extension; setting it true
-  # without that license fails with a 500 "product license does not
-  # cover this function" (ModifyObjectRepository).
-  sosapi_enabled: false
 
   # Object versioning on the repository (Disabled | Suspended | Enabled).
   object_versioning: "Enabled"
