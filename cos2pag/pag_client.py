@@ -11,29 +11,6 @@ import requests
 
 from .http_client import ApiError, request_json
 
-# Fields copied from a template partition when cloning a new one for a
-# tenant, i.e. everything in PartitionInformationPatch except "name" and
-# "uuid" (name is the new tenant's, uuid is server-assigned).
-PARTITION_CLONE_FIELDS = [
-    "writeProtected",
-    "storageClassTypes",
-    "devType",
-    "devCodeRate",
-    "devAllocStrat",
-    "devAllocThreshold",
-    "devAllocParallelism",
-    "devAllocMediaPref",
-    "devAllocMediaAlt",
-    "devAllocSrcPrio",
-    "devAllocSrcLimit",
-    "cryptLocked",
-    "cryptMode",
-    "cryptAlgo",
-    "pstBufCfgPresent",
-    "optionForceHighAvailability",
-    "optionAllowReducedRedundancy",
-]
-
 
 class PagClient:
     def __init__(self, base_url: str, session: requests.Session, timeout: int = 30, dry_run: bool = False):
@@ -91,11 +68,13 @@ class PagClient:
     def ensure_partition(
         self,
         tenant_name: str,
-        template_name_or_uuid: str,
+        defaults: dict[str, Any],
         encryption_password: str | None = None,
     ) -> tuple[dict[str, Any] | None, str]:
-        """Find the tenant's partition by name, creating it (cloned from
-        the template partition's characteristics) if it doesn't exist yet.
+        """Find the tenant's partition by name, creating it with the given
+        settings (a static, pre-filled `PartitionInformationPatch`-shaped
+        dict, e.g. copied once from an existing reference partition) if it
+        doesn't exist yet.
 
         Returns ``(partition, action)`` where action is "found" or
         "created". In dry-run mode, on "created", the returned partition
@@ -105,13 +84,8 @@ class PagClient:
         if existing is not None:
             return existing, "found"
 
-        template = self.find_partition(template_name_or_uuid)
-        body: dict[str, Any] = {"name": tenant_name}
-        for field in PARTITION_CLONE_FIELDS:
-            if field in template:
-                body[field] = template[field]
-
-        password = encryption_password if template.get("cryptMode") == "PrivKey" else None
+        body: dict[str, Any] = {"name": tenant_name, **defaults}
+        password = encryption_password if defaults.get("cryptMode") == "PrivKey" else None
         return self.create_partition(body, encryption_password=password), "created"
 
     def list_repositories(self, partition_uuid: str) -> list[dict[str, Any]]:

@@ -33,7 +33,7 @@ def base_config():
         "pag": {
             "base_url": "https://pag.example.com",
             "auth": {"type": "basic", "username": "u", "password": "p"},
-            "partition_template": "TEMPLATE-01",
+            "new_partition_defaults": {"devType": "Tape", "storageClassTypes": ["Standard"]},
             "owner": {"uuid": "pdr-user-uuid", "type": "User"},
         },
         "pdr": {
@@ -257,7 +257,7 @@ def test_sync_bucket_derives_tenant_from_bucket_prefix(fake_clients):
     fake_clients["pag"].ensure_partition.assert_called_once()
     args, kwargs = fake_clients["pag"].ensure_partition.call_args
     assert args[0] == "ctie-001"
-    assert args[1] == "TEMPLATE-01"
+    assert args[1] == {"devType": "Tape", "storageClassTypes": ["Standard"]}
 
 
 def test_sync_bucket_tenant_prefix_parts_is_configurable(fake_clients):

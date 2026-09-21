@@ -17,9 +17,10 @@ For a given bucket name, running the tool does:
    - Resolve the tenant's partition: its name is the leading N
      hyphen-separated segments of the bucket name (`pag.tenant_prefix_parts`,
      e.g. `ctie-001` out of `ctie-001-gael-nextcloud`), overridable with
-     `--tenant`. If that partition doesn't exist yet, it's created by
-     cloning every relevant setting from an existing template partition
-     (`pag.partition_template`) — only the name differs.
+     `--tenant`. If that partition doesn't exist yet, it's created with
+     the settings in `pag.new_partition_defaults` (a static config block
+     you fill in once, e.g. copied from an existing reference partition
+     like "costotape") — only the name differs.
    - Create an object repository with the same name as the COS bucket in
      that partition, owned by the configured PDR user (or reuse it and
      update its owner if it already exists).

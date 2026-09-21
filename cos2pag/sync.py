@@ -148,17 +148,17 @@ def derive_tenant(bucket_name: str, prefix_parts: int) -> str:
 
 def _sync_pag_repository(pag_cfg: dict, bucket_name: str, tenant_name: str, dry_run: bool, report: SyncReport) -> dict | None:
     client = _build_pag_client(pag_cfg, dry_run)
-    template = require(pag_cfg, "partition_template", "pag")
+    partition_defaults = require(pag_cfg, "new_partition_defaults", "pag")
     owner = require(pag_cfg, "owner", "pag")
 
     partition, partition_action = client.ensure_partition(
-        tenant_name, template, encryption_password=pag_cfg.get("partition_encryption_password")
+        tenant_name, partition_defaults, encryption_password=pag_cfg.get("partition_encryption_password")
     )
     report.add(
         "pag.partition",
         changed=(partition_action == "created"),
         skipped=(partition_action == "found"),
-        detail=f"{partition_action} partition '{tenant_name}' (cloned from '{template}')" if partition_action == "created" else f"{partition_action} partition '{tenant_name}'",
+        detail=f"{partition_action} partition '{tenant_name}'",
     )
 
     if partition is None:

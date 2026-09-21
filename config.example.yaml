@@ -53,13 +53,38 @@ pag:
   # given bucket.
   tenant_prefix_parts: 2
 
-  # If the tenant's partition doesn't exist yet, it is created by cloning
-  # every relevant setting (storage class, device allocation, encryption
-  # mode, etc.) from this existing template partition -- only its name
-  # differs. Either the partition name or its uuid.
-  partition_template: "costotape"
+  # If the tenant's partition doesn't exist yet, it is created with these
+  # settings (a PartitionInformationPatch body, "name" excluded -- that's
+  # set to the tenant name automatically). Fill this in once by copying
+  # the relevant fields from an existing reference partition (e.g.
+  # "costotape"): GET /api/partitions on the PAG admin API, find that
+  # partition in the response, and copy over writeProtected,
+  # storageClassTypes, devType, devCodeRate, devAllocStrat,
+  # devAllocThreshold, devAllocParallelism, devAllocMediaPref,
+  # devAllocMediaAlt, devAllocSrcPrio, devAllocSrcLimit, cryptLocked,
+  # cryptMode, cryptAlgo, pstBufCfgPresent, optionForceHighAvailability,
+  # optionAllowReducedRedundancy. Everything below is a placeholder --
+  # replace with costotape's actual values.
+  new_partition_defaults:
+    writeProtected: false
+    storageClassTypes: ["CHANGE_ME"]
+    devType: "CHANGE_ME"
+    devCodeRate: "CHANGE_ME"
+    devAllocStrat: "CHANGE_ME"
+    devAllocThreshold: 0
+    devAllocParallelism: 1
+    devAllocMediaPref: "CHANGE_ME"
+    devAllocMediaAlt: "CHANGE_ME"
+    devAllocSrcPrio: 0
+    devAllocSrcLimit: []
+    cryptLocked: false
+    cryptMode: "Off"
+    cryptAlgo: "CHANGE_ME"
+    pstBufCfgPresent: false
+    optionForceHighAvailability: false
+    optionAllowReducedRedundancy: false
 
-  # Only used if partition_template's encryption mode is "PrivKey" -- the
+  # Only used if new_partition_defaults.cryptMode is "PrivKey" -- the
   # password required to create a partition with that encryption mode.
   # partition_encryption_password: "${PAG_PARTITION_ENCRYPTION_PASSWORD}"
 
