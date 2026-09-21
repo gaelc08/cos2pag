@@ -173,3 +173,9 @@ pdr:
       connection_type: "None"
       # topic defaults to the bucket name if omitted, same convention as
       # cos.notifications
+
+  # Start an initial full Copy job right after the task is created, so
+  # objects already written to the bucket before replication was set up
+  # get copied too (notifications/schedule only pick up future changes).
+  # Set to false to opt out.
+  auto_start_job: true

@@ -421,6 +421,17 @@ def test_sync_bucket_starts_initial_copy_job_when_task_created(fake_clients):
     assert step.changed is True
 
 
+def test_sync_bucket_auto_start_job_can_be_disabled(fake_clients):
+    config = base_config()
+    config["pdr"]["auto_start_job"] = False
+    fake_clients["pdr"].ensure_task.return_value = ({"id": 42, "alias": BUCKET}, "created")
+
+    report = sync_bucket(config, BUCKET, TENANT)
+
+    fake_clients["pdr"].start_job.assert_not_called()
+    assert not any(s.name == "pdr.job" for s in report.steps)
+
+
 def test_sync_bucket_does_not_start_job_when_task_already_existed(fake_clients):
     fake_clients["pdr"].ensure_task.return_value = ({"id": 42, "alias": BUCKET}, "unchanged")
 

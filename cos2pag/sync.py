@@ -311,10 +311,11 @@ def _sync_pdr_task(pdr_cfg: dict, bucket_name: str, dry_run: bool, report: SyncR
     else:
         report.add("pdr.task", changed=True, detail=detail)
 
-    if action == "created" and task is not None and task.get("id") is not None:
-        # Force an initial full Copy job so objects already written to the
-        # bucket before replication was set up get copied too -- otherwise
-        # only new/changed objects going forward would ever be picked up.
+    # Defaults to on: notifications/schedule only pick up future object
+    # changes, so without an initial full Copy job, anything already
+    # written to the bucket before replication was set up would never be
+    # copied. Set pdr.auto_start_job: false to opt out.
+    if action == "created" and pdr_cfg.get("auto_start_job", True) and task is not None and task.get("id") is not None:
         client.start_job(task["id"])
         report.add("pdr.job", changed=True, detail=f"started initial copy job for task id={task['id']}")
 

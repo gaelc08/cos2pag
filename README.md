@@ -39,9 +39,10 @@ For a given bucket name, running the tool does:
      separate from `cos.notifications`) if configured. The Kafka topic
      defaults to the bucket's own name, same convention as COS.
    - When the task is newly created, immediately start an initial `Copy`
-     job on it. Notifications/schedule only pick up *future* object
-     changes, so without this, anything already written to the bucket
-     before replication was set up would never get copied.
+     job on it (`pdr.auto_start_job`, default `true`). Notifications/
+     schedule only pick up *future* object changes, so without this,
+     anything already written to the bucket before replication was set
+     up would never get copied. Set `pdr.auto_start_job: false` to opt out.
 
 Every step is idempotent: re-running the tool on a bucket that is already
 fully set up is a no-op (each step is reported as `SKIPPED`/`OK`).
