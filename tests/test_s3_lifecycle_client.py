@@ -186,3 +186,78 @@ def test_ensure_bucket_lifecycle_dry_run_skips_put():
     assert action == "updated"
     assert rules == desired
     s3_client.put_bucket_lifecycle_configuration.assert_not_called()
+
+
+def test_ensure_bucket_lifecycle_unchanged_when_server_omits_empty_prefix_filter():
+    # Real-world server behavior (confirmed against a live PAG S3 endpoint):
+    # GetBucketLifecycleConfiguration omits "Filter" entirely for a rule
+    # that was PUT with Filter: {"Prefix": ""} -- comparing byte-for-byte
+    # would report "updated" on every single run, forever, even though
+    # nothing changed.
+    existing = [
+        {
+            "ID": "abort-incomplete-multipart-uploads",
+            "Status": "Enabled",
+            "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 7},
+        },
+        {
+            "ID": "delete-expired-delete-markers",
+            "Status": "Enabled",
+            "Expiration": {"ExpiredObjectDeleteMarker": True},
+        },
+        {
+            "ID": "expire-noncurrent-versions",
+            "Status": "Enabled",
+            "NoncurrentVersionExpiration": {"NoncurrentDays": 30},
+        },
+    ]
+    s3_client = MagicMock()
+    s3_client.get_bucket_lifecycle_configuration.return_value = {"Rules": existing}
+    desired = [
+        {
+            "ID": "abort-incomplete-multipart-uploads",
+            "Status": "Enabled",
+            "Filter": {"Prefix": ""},
+            "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 7},
+        },
+        {
+            "ID": "delete-expired-delete-markers",
+            "Status": "Enabled",
+            "Filter": {"Prefix": ""},
+            "Expiration": {"ExpiredObjectDeleteMarker": True},
+        },
+        {
+            "ID": "expire-noncurrent-versions",
+            "Status": "Enabled",
+            "Filter": {"Prefix": ""},
+            "NoncurrentVersionExpiration": {"NoncurrentDays": 30},
+        },
+    ]
+
+    rules, action = ensure_bucket_lifecycle(s3_client, BUCKET, desired)
+
+    assert action == "unchanged"
+    s3_client.put_bucket_lifecycle_configuration.assert_not_called()
+
+
+def test_ensure_bucket_lifecycle_still_detects_real_changes_despite_filter_normalization():
+    existing = [
+        {"ID": "expire-noncurrent-versions", "Status": "Enabled", "NoncurrentVersionExpiration": {"NoncurrentDays": 30}}
+    ]
+    s3_client = MagicMock()
+    s3_client.get_bucket_lifecycle_configuration.return_value = {"Rules": existing}
+    desired = [
+        {
+            "ID": "expire-noncurrent-versions",
+            "Status": "Enabled",
+            "Filter": {"Prefix": ""},
+            "NoncurrentVersionExpiration": {"NoncurrentDays": 90},
+        }
+    ]
+
+    rules, action = ensure_bucket_lifecycle(s3_client, BUCKET, desired)
+
+    assert action == "updated"
+    s3_client.put_bucket_lifecycle_configuration.assert_called_once_with(
+        Bucket=BUCKET, LifecycleConfiguration={"Rules": desired}
+    )

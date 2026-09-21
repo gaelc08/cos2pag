@@ -157,6 +157,26 @@ def _matches(desired: Any, existing: Any) -> bool:
     return desired == existing
 
 
+def _rule_matches(desired_rule: dict[str, Any], existing_rule: dict[str, Any] | None) -> bool:
+    """Like ``_matches``, but treats the ``Filter`` field specially: this
+    API has been observed omitting ``Filter`` entirely from
+    ``GetBucketLifecycleConfiguration`` when it's an empty-prefix filter
+    (``{"Prefix": ""}``, meaning "applies to every object") rather than
+    echoing it back as sent or as ``{}`` -- so a byte-for-byte comparison
+    would report every rule as changed, forever, even right after
+    setting them. Both are treated as the same "applies to everything"
+    filter here; every other field still compares exactly.
+    """
+    if existing_rule is None:
+        return False
+    desired_prefix = (desired_rule.get("Filter") or {}).get("Prefix", "")
+    existing_prefix = (existing_rule.get("Filter") or {}).get("Prefix", "")
+    if desired_prefix != existing_prefix:
+        return False
+    other_fields = {k: v for k, v in desired_rule.items() if k != "Filter"}
+    return _matches(other_fields, existing_rule)
+
+
 def get_bucket_lifecycle(s3_client, bucket_name: str) -> list[dict[str, Any]]:
     try:
         return s3_client.get_bucket_lifecycle_configuration(Bucket=bucket_name).get("Rules", [])
@@ -179,7 +199,7 @@ def ensure_bucket_lifecycle(
     existing = get_bucket_lifecycle(s3_client, bucket_name)
     existing_by_id = {rule.get("ID"): rule for rule in existing}
     if len(existing) == len(desired_rules) and all(
-        _matches(rule, existing_by_id.get(rule["ID"])) for rule in desired_rules
+        _rule_matches(rule, existing_by_id.get(rule["ID"])) for rule in desired_rules
     ):
         return existing, "unchanged"
 
