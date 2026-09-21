@@ -79,6 +79,18 @@ pag:
   # password required to create a partition with that encryption mode.
   # partition_encryption_password: "${PAG_PARTITION_ENCRYPTION_PASSWORD}"
 
+  # Persistent buffer for the partition (System > Partitions > Persistent
+  # Buffer in the PAG GUI). Applied to the tenant's partition whether it
+  # was just created or already existed. Omit this whole block to skip
+  # managing it.
+  persistent_buffer:
+    path: "/PoINT/PAG/PBUFFER"
+    enabled: true
+    flush_gradually: false   # false = "Completely, when triggered"; true = "Gradually, when triggered"
+    trigger_on_max_age: {value: 6, unit: hours}     # seconds | minutes | hours | days
+    trigger_on_max_size: {value: 100, unit: gb}     # byte | kb | mb | gb | tb
+    object_size_limit: {value: 0, unit: byte}       # 0 = "Not set"
+
   # PAG user/group/ESP that PDR authenticates as; the created repository
   # is owned by this principal so PDR can write replicated objects to it.
   owner:
@@ -141,7 +153,7 @@ pdr:
     max_parallel_jobs: 2
     check_destination: false
     enable_deletion: true
-    delete_delay_days: 30   # fixed delay, in days, before a source deletion is mirrored to the target
+    delete_delay_days: 30   # default delay, in days, before a source deletion is mirrored to the target -- override per run with --delete-delay-days
 
   schedule:
     enabled: true

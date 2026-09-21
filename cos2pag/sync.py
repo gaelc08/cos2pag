@@ -136,6 +136,39 @@ def _sync_cos_bucket(cos_cfg: dict, bucket_name: str, dry_run: bool, report: Syn
                 raise
 
 
+_TIME_UNIT_SECONDS = {"seconds": 1, "minutes": 60, "hours": 3600, "days": 86400}
+_SIZE_UNIT_BYTES = {"byte": 1, "kb": 1024, "mb": 1024**2, "gb": 1024**3, "tb": 1024**4}
+
+
+def _duration_to_seconds(spec: dict) -> int:
+    unit = spec["unit"].lower()
+    if unit not in _TIME_UNIT_SECONDS:
+        raise ConfigError(f"Unknown time unit '{spec['unit']}', expected one of {sorted(_TIME_UNIT_SECONDS)}")
+    return int(spec["value"] * _TIME_UNIT_SECONDS[unit])
+
+
+def _size_to_bytes(spec: dict) -> int:
+    unit = spec["unit"].lower()
+    if unit not in _SIZE_UNIT_BYTES:
+        raise ConfigError(f"Unknown size unit '{spec['unit']}', expected one of {sorted(_SIZE_UNIT_BYTES)}")
+    return int(spec["value"] * _SIZE_UNIT_BYTES[unit])
+
+
+def _build_persistent_buffer_body(pb_cfg: dict) -> dict:
+    body: dict[str, Any] = {"bufPath": require(pb_cfg, "path", "pag.persistent_buffer")}
+    if "enabled" in pb_cfg:
+        body["bufEnabled"] = pb_cfg["enabled"]
+    if "flush_gradually" in pb_cfg:
+        body["bufFlushGradually"] = pb_cfg["flush_gradually"]
+    if "trigger_on_max_age" in pb_cfg:
+        body["bufFlushOnMaxAge"] = _duration_to_seconds(pb_cfg["trigger_on_max_age"])
+    if "trigger_on_max_size" in pb_cfg:
+        body["bufFlushOnMaxSize"] = _size_to_bytes(pb_cfg["trigger_on_max_size"])
+    if "object_size_limit" in pb_cfg:
+        body["bufThreshold"] = _size_to_bytes(pb_cfg["object_size_limit"])
+    return body
+
+
 def _sync_pag_repository(pag_cfg: dict, bucket_name: str, tenant_name: str, dry_run: bool, report: SyncReport) -> dict | None:
     client = _build_pag_client(pag_cfg, dry_run)
     partition_defaults = require(pag_cfg, "new_partition_defaults", "pag")
@@ -150,6 +183,23 @@ def _sync_pag_repository(pag_cfg: dict, bucket_name: str, tenant_name: str, dry_
         skipped=(partition_action == "found"),
         detail=f"{partition_action} partition '{tenant_name}'",
     )
+
+    persistent_buffer_cfg = pag_cfg.get("persistent_buffer")
+    if persistent_buffer_cfg:
+        pb_body = _build_persistent_buffer_body(persistent_buffer_cfg)
+        if partition is None:
+            report.add(
+                "pag.persistent_buffer",
+                changed=True,
+                detail=f"configured persistent buffer for partition '{tenant_name}'",
+            )
+        else:
+            pb_config, pb_action = client.ensure_persistent_buffer(partition["uuid"], pb_body)
+            pb_detail = f"{pb_action} persistent buffer for partition '{tenant_name}'"
+            if pb_action == "unchanged":
+                report.add("pag.persistent_buffer", changed=False, skipped=True, detail=pb_detail)
+            else:
+                report.add("pag.persistent_buffer", changed=True, detail=pb_detail)
 
     if partition is None:
         # dry-run: the partition doesn't exist yet, so there's nothing
@@ -266,11 +316,20 @@ def _sync_pdr_task(pdr_cfg: dict, bucket_name: str, dry_run: bool, report: SyncR
         report.add("pdr.job", changed=True, detail=f"started job for task id={task['id']}")
 
 
-def sync_bucket(config: dict, bucket_name: str, tenant: str, dry_run: bool = False) -> SyncReport:
+def sync_bucket(
+    config: dict,
+    bucket_name: str,
+    tenant: str,
+    dry_run: bool = False,
+    delete_delay_days: int | None = None,
+) -> SyncReport:
     """``tenant`` names the PAG partition to use/create and is always
     required explicitly: several real tenant codes share a common prefix
     (e.g. "ME", "ME-SR", "ME-SRE", "ME-SRE2"), so guessing it from the
     bucket name risks silently picking the wrong tenant.
+
+    ``delete_delay_days``, if given, overrides
+    ``pdr.copy_options.delete_delay_days`` for this run only.
     """
     report = SyncReport(bucket_name=bucket_name, dry_run=dry_run)
 
@@ -278,8 +337,15 @@ def sync_bucket(config: dict, bucket_name: str, tenant: str, dry_run: bool = Fal
         if section not in config:
             raise ConfigError(f"Missing top-level config section '{section}'")
 
+    pdr_cfg = config["pdr"]
+    if delete_delay_days is not None:
+        pdr_cfg = {
+            **pdr_cfg,
+            "copy_options": {**pdr_cfg.get("copy_options", {}), "delete_delay_days": delete_delay_days},
+        }
+
     _sync_cos_bucket(config["cos"], bucket_name, dry_run, report)
     _sync_pag_repository(config["pag"], bucket_name, tenant, dry_run, report)
-    _sync_pdr_task(config["pdr"], bucket_name, dry_run, report)
+    _sync_pdr_task(pdr_cfg, bucket_name, dry_run, report)
 
     return report

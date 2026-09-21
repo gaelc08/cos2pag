@@ -23,6 +23,11 @@ For a given bucket name, running the tool does:
      `pag.new_partition_defaults` (a static config block you fill in
      once, e.g. copied from an existing reference partition like
      "costotape") — only the name differs.
+   - If `pag.persistent_buffer` is configured, apply it to that partition
+     (`/api/partitions/{uuid}/pst_buffer_config`) — the "Persistent
+     Buffer" settings in the PAG GUI (path, flush mode, age/size
+     triggers, object size limit). Applied whether the partition was just
+     created or already existed; skipped entirely if not configured.
    - Create an object repository with the same name as the COS bucket in
      that partition, owned by the configured PDR user (or reuse it and
      update its owner if it already exists).
@@ -98,7 +103,8 @@ this run creates it.
 
 Add `--dry-run` to see what would be sent without making any mutating
 request (`GET`s are still executed so the plan reflects real current
-state), and `-v` for debug logging.
+state), `-v` for debug logging, and `--delete-delay-days <N>` to override
+`pdr.copy_options.delete_delay_days` for this run only.
 
 ## Important safety note on the IP whitelist
 

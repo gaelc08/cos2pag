@@ -88,6 +88,43 @@ class PagClient:
         password = encryption_password if defaults.get("cryptMode") == "PrivKey" else None
         return self.create_partition(body, encryption_password=password), "created"
 
+    def get_persistent_buffer(self, partition_uuid: str) -> dict[str, Any] | None:
+        try:
+            return request_json(
+                self.session,
+                "GET",
+                self._url(f"/api/partitions/{partition_uuid}/pst_buffer_config"),
+                timeout=self.timeout,
+            )
+        except ApiError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+
+    def set_persistent_buffer(self, partition_uuid: str, body: dict[str, Any]) -> dict[str, Any] | None:
+        return request_json(
+            self.session,
+            "PUT",
+            self._url(f"/api/partitions/{partition_uuid}/pst_buffer_config"),
+            timeout=self.timeout,
+            json=body,
+            dry_run=self.dry_run,
+        )
+
+    def ensure_persistent_buffer(self, partition_uuid: str, desired: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+        """Set the partition's persistent buffer configuration (PUT
+        replaces it wholesale) unless it already matches every field in
+        ``desired``.
+
+        Returns ``(config, action)`` where action is one of "created"
+        (none was configured yet), "updated", "unchanged".
+        """
+        existing = self.get_persistent_buffer(partition_uuid)
+        if existing is not None and all(existing.get(k) == v for k, v in desired.items()):
+            return existing, "unchanged"
+        action = "created" if existing is None else "updated"
+        return self.set_persistent_buffer(partition_uuid, desired), action
+
     def list_repositories(self, partition_uuid: str) -> list[dict[str, Any]]:
         repositories: list[dict[str, Any]] = []
         prev_index = 0

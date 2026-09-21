@@ -4,10 +4,53 @@ import pytest
 
 from cos2pag import sync as sync_module
 from cos2pag.http_client import ApiError
-from cos2pag.sync import sync_bucket
+from cos2pag.sync import _build_persistent_buffer_body, _duration_to_seconds, _size_to_bytes, sync_bucket
 
 BUCKET = "my-bucket"
 TENANT = "MY-TENANT"
+
+
+def test_duration_to_seconds_converts_units():
+    assert _duration_to_seconds({"value": 6, "unit": "hours"}) == 21600
+    assert _duration_to_seconds({"value": 1, "unit": "days"}) == 86400
+    assert _duration_to_seconds({"value": 30, "unit": "minutes"}) == 1800
+    assert _duration_to_seconds({"value": 10, "unit": "seconds"}) == 10
+
+
+def test_duration_to_seconds_rejects_unknown_unit():
+    with pytest.raises(Exception):
+        _duration_to_seconds({"value": 1, "unit": "fortnights"})
+
+
+def test_size_to_bytes_converts_units():
+    assert _size_to_bytes({"value": 100, "unit": "gb"}) == 100 * 1024**3
+    assert _size_to_bytes({"value": 1, "unit": "tb"}) == 1024**4
+    assert _size_to_bytes({"value": 0, "unit": "byte"}) == 0
+
+
+def test_build_persistent_buffer_body_maps_fields():
+    body = _build_persistent_buffer_body(
+        {
+            "path": "/PoINT/PAG/PBUFFER",
+            "enabled": True,
+            "flush_gradually": False,
+            "trigger_on_max_age": {"value": 6, "unit": "hours"},
+            "trigger_on_max_size": {"value": 100, "unit": "gb"},
+            "object_size_limit": {"value": 0, "unit": "byte"},
+        }
+    )
+    assert body == {
+        "bufPath": "/PoINT/PAG/PBUFFER",
+        "bufEnabled": True,
+        "bufFlushGradually": False,
+        "bufFlushOnMaxAge": 21600,
+        "bufFlushOnMaxSize": 100 * 1024**3,
+        "bufThreshold": 0,
+    }
+
+
+def test_build_persistent_buffer_body_only_path_required():
+    assert _build_persistent_buffer_body({"path": "/x"}) == {"bufPath": "/x"}
 
 
 def base_config():
@@ -285,3 +328,84 @@ def test_sync_bucket_handles_dry_run_partition_creation_without_uuid(fake_client
     fake_clients["pag"].ensure_repository.assert_not_called()
     repo_step = next(s for s in report.steps if s.name == "pag.repository")
     assert repo_step.changed is True
+
+
+def test_sync_bucket_skips_persistent_buffer_when_not_configured(fake_clients):
+    report = sync_bucket(base_config(), BUCKET, TENANT)
+
+    step_names = [s.name for s in report.steps]
+    assert "pag.persistent_buffer" not in step_names
+    fake_clients["pag"].ensure_persistent_buffer.assert_not_called()
+
+
+def test_sync_bucket_configures_persistent_buffer_with_unit_conversion(fake_clients):
+    config = base_config()
+    config["pag"]["persistent_buffer"] = {
+        "path": "/PoINT/PAG/PBUFFER",
+        "enabled": True,
+        "flush_gradually": False,
+        "trigger_on_max_age": {"value": 6, "unit": "hours"},
+        "trigger_on_max_size": {"value": 100, "unit": "gb"},
+        "object_size_limit": {"value": 0, "unit": "byte"},
+    }
+    fake_clients["pag"].ensure_persistent_buffer.return_value = ({"bufPath": "/PoINT/PAG/PBUFFER"}, "created")
+
+    report = sync_bucket(config, BUCKET, TENANT)
+
+    fake_clients["pag"].ensure_persistent_buffer.assert_called_once()
+    args, kwargs = fake_clients["pag"].ensure_persistent_buffer.call_args
+    assert args[0] == "part-uuid"
+    body = args[1]
+    assert body["bufPath"] == "/PoINT/PAG/PBUFFER"
+    assert body["bufEnabled"] is True
+    assert body["bufFlushGradually"] is False
+    assert body["bufFlushOnMaxAge"] == 6 * 3600
+    assert body["bufFlushOnMaxSize"] == 100 * 1024**3
+    assert body["bufThreshold"] == 0
+
+    step = next(s for s in report.steps if s.name == "pag.persistent_buffer")
+    assert step.changed is True
+
+
+def test_sync_bucket_reports_unchanged_persistent_buffer_as_skipped(fake_clients):
+    config = base_config()
+    config["pag"]["persistent_buffer"] = {"path": "/PoINT/PAG/PBUFFER"}
+    fake_clients["pag"].ensure_persistent_buffer.return_value = ({"bufPath": "/PoINT/PAG/PBUFFER"}, "unchanged")
+
+    report = sync_bucket(config, BUCKET, TENANT)
+
+    step = next(s for s in report.steps if s.name == "pag.persistent_buffer")
+    assert step.skipped is True
+    assert step.changed is False
+
+
+def test_sync_bucket_skips_persistent_buffer_call_when_partition_not_yet_created(fake_clients):
+    config = base_config()
+    config["pag"]["persistent_buffer"] = {"path": "/PoINT/PAG/PBUFFER"}
+    fake_clients["pag"].ensure_partition.return_value = (None, "created")
+
+    report = sync_bucket(config, BUCKET, TENANT, dry_run=True)
+
+    fake_clients["pag"].ensure_persistent_buffer.assert_not_called()
+    step = next(s for s in report.steps if s.name == "pag.persistent_buffer")
+    assert step.changed is True
+
+
+def test_sync_bucket_delete_delay_days_override(fake_clients):
+    config = base_config()
+    config["pdr"]["copy_options"] = {"delete_delay_days": 30}
+
+    sync_bucket(config, BUCKET, TENANT, delete_delay_days=90)
+
+    (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
+    assert task_body["options"]["deleteDelayDays"] == 90
+
+
+def test_sync_bucket_delete_delay_days_default_from_config(fake_clients):
+    config = base_config()
+    config["pdr"]["copy_options"] = {"delete_delay_days": 30}
+
+    sync_bucket(config, BUCKET, TENANT)
+
+    (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
+    assert task_body["options"]["deleteDelayDays"] == 30

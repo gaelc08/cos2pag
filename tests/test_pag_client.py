@@ -135,3 +135,58 @@ def test_ensure_partition_omits_encryption_password_for_non_privkey_mode(monkeyp
 
     (_body,), kwargs = client.create_partition.call_args
     assert kwargs.get("encryption_password") is None
+
+
+def make_pst_buf_client(monkeypatch, existing=None):
+    client = PagClient.__new__(PagClient)
+    monkeypatch.setattr(client, "get_persistent_buffer", lambda partition_uuid: existing)
+    monkeypatch.setattr(client, "set_persistent_buffer", MagicMock(return_value={"bufPath": "/new"}))
+    return client
+
+
+def test_ensure_persistent_buffer_creates_when_absent(monkeypatch):
+    client = make_pst_buf_client(monkeypatch, existing=None)
+    desired = {"bufPath": "/PoINT/PAG/PBUFFER", "bufEnabled": True}
+
+    config, action = client.ensure_persistent_buffer(PARTITION_UUID, desired)
+
+    assert action == "created"
+    client.set_persistent_buffer.assert_called_once_with(PARTITION_UUID, desired)
+
+
+def test_ensure_persistent_buffer_unchanged_when_matching(monkeypatch):
+    existing = {"bufPath": "/PoINT/PAG/PBUFFER", "bufEnabled": True, "bufThreshold": 0}
+    client = make_pst_buf_client(monkeypatch, existing=existing)
+    desired = {"bufPath": "/PoINT/PAG/PBUFFER", "bufEnabled": True}
+
+    config, action = client.ensure_persistent_buffer(PARTITION_UUID, desired)
+
+    assert action == "unchanged"
+    client.set_persistent_buffer.assert_not_called()
+
+
+def test_ensure_persistent_buffer_updates_when_differs(monkeypatch):
+    existing = {"bufPath": "/old/path", "bufEnabled": True}
+    client = make_pst_buf_client(monkeypatch, existing=existing)
+    desired = {"bufPath": "/PoINT/PAG/PBUFFER", "bufEnabled": True}
+
+    config, action = client.ensure_persistent_buffer(PARTITION_UUID, desired)
+
+    assert action == "updated"
+    client.set_persistent_buffer.assert_called_once_with(PARTITION_UUID, desired)
+
+
+def test_get_persistent_buffer_returns_none_on_404(monkeypatch):
+    from cos2pag.http_client import ApiError
+
+    client = PagClient.__new__(PagClient)
+    client.session = MagicMock()
+    client.timeout = 30
+    client.base_url = "https://pag.example.com"
+
+    def fake_request_json(*args, **kwargs):
+        raise ApiError("GET", "https://pag.example.com/x", 404, "not found")
+
+    monkeypatch.setattr("cos2pag.pag_client.request_json", fake_request_json)
+
+    assert client.get_persistent_buffer(PARTITION_UUID) is None
