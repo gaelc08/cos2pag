@@ -11,6 +11,29 @@ import requests
 
 from .http_client import ApiError, request_json
 
+# Fields copied from a template partition when cloning a new one for a
+# tenant, i.e. everything in PartitionInformationPatch except "name" and
+# "uuid" (name is the new tenant's, uuid is server-assigned).
+PARTITION_CLONE_FIELDS = [
+    "writeProtected",
+    "storageClassTypes",
+    "devType",
+    "devCodeRate",
+    "devAllocStrat",
+    "devAllocThreshold",
+    "devAllocParallelism",
+    "devAllocMediaPref",
+    "devAllocMediaAlt",
+    "devAllocSrcPrio",
+    "devAllocSrcLimit",
+    "cryptLocked",
+    "cryptMode",
+    "cryptAlgo",
+    "pstBufCfgPresent",
+    "optionForceHighAvailability",
+    "optionAllowReducedRedundancy",
+]
+
 
 class PagClient:
     def __init__(self, base_url: str, session: requests.Session, timeout: int = 30, dry_run: bool = False):
@@ -42,10 +65,54 @@ class PagClient:
         return partitions
 
     def find_partition(self, name_or_uuid: str) -> dict[str, Any]:
+        partition = self.find_partition_optional(name_or_uuid)
+        if partition is None:
+            raise LookupError(f"PAG partition '{name_or_uuid}' not found")
+        return partition
+
+    def find_partition_optional(self, name_or_uuid: str) -> dict[str, Any] | None:
         for partition in self.list_partitions():
             if partition.get("uuid") == name_or_uuid or partition.get("name") == name_or_uuid:
                 return partition
-        raise LookupError(f"PAG partition '{name_or_uuid}' not found")
+        return None
+
+    def create_partition(self, body: dict[str, Any], encryption_password: str | None = None) -> dict[str, Any] | None:
+        params = {"encryptionPassword": encryption_password} if encryption_password else None
+        return request_json(
+            self.session,
+            "POST",
+            self._url("/api/partitions"),
+            timeout=self.timeout,
+            json=body,
+            params=params,
+            dry_run=self.dry_run,
+        )
+
+    def ensure_partition(
+        self,
+        tenant_name: str,
+        template_name_or_uuid: str,
+        encryption_password: str | None = None,
+    ) -> tuple[dict[str, Any] | None, str]:
+        """Find the tenant's partition by name, creating it (cloned from
+        the template partition's characteristics) if it doesn't exist yet.
+
+        Returns ``(partition, action)`` where action is "found" or
+        "created". In dry-run mode, on "created", the returned partition
+        is ``None`` since no request is actually sent.
+        """
+        existing = self.find_partition_optional(tenant_name)
+        if existing is not None:
+            return existing, "found"
+
+        template = self.find_partition(template_name_or_uuid)
+        body: dict[str, Any] = {"name": tenant_name}
+        for field in PARTITION_CLONE_FIELDS:
+            if field in template:
+                body[field] = template[field]
+
+        password = encryption_password if template.get("cryptMode") == "PrivKey" else None
+        return self.create_partition(body, encryption_password=password), "created"
 
     def list_repositories(self, partition_uuid: str) -> list[dict[str, Any]]:
         repositories: list[dict[str, Any]] = []

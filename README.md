@@ -13,10 +13,16 @@ For a given bucket name, running the tool does:
      preserved — ACL and firewall are re-sent in full, since the API
      replaces them wholesale on PATCH).
    - `PATCH` the bucket's `notifications.topic` to the bucket's own name.
-2. **PAG** (`/api/partitions/{partitionUuid}/repositories`)
+2. **PAG** (`/api/partitions`, `/api/partitions/{partitionUuid}/repositories`)
+   - Resolve the tenant's partition: its name is the leading N
+     hyphen-separated segments of the bucket name (`pag.tenant_prefix_parts`,
+     e.g. `ctie-001` out of `ctie-001-gael-nextcloud`), overridable with
+     `--tenant`. If that partition doesn't exist yet, it's created by
+     cloning every relevant setting from an existing template partition
+     (`pag.partition_template`) — only the name differs.
    - Create an object repository with the same name as the COS bucket in
-     the configured partition, owned by the configured PDR user (or reuse
-     it and update its owner if it already exists).
+     that partition, owned by the configured PDR user (or reuse it and
+     update its owner if it already exists).
 3. **PDR** (`/api/tasks`)
    - Create a replication task from the COS bucket (S3 source) to the PAG
      repository (S3 target), including copy/deletion options
@@ -84,7 +90,8 @@ python -m cos2pag my-bucket-name --config config.yaml
 
 Add `--dry-run` to see what would be sent without making any mutating
 request (`GET`s are still executed so the plan reflects real current
-state), and `-v` for debug logging.
+state), `-v` for debug logging, and `--tenant <name>` to force the PAG
+partition/tenant name instead of deriving it from the bucket name.
 
 ## Important safety note on the IP whitelist
 

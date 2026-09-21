@@ -46,9 +46,22 @@ pag:
   verify_ssl: false  # see cos.verify_ssl note above
   timeout: 30
 
-  # Partition where the repository (bucket) must be created. Either the
-  # partition name or its uuid.
-  partition: "costotape"
+  # One partition per tenant. The tenant name is derived from the leading
+  # N hyphen-separated segments of the bucket name (e.g. "ctie-001" out
+  # of "ctie-001-gael-nextcloud" with tenant_prefix_parts: 2) -- override
+  # per-run with `--tenant` on the CLI if that convention doesn't fit a
+  # given bucket.
+  tenant_prefix_parts: 2
+
+  # If the tenant's partition doesn't exist yet, it is created by cloning
+  # every relevant setting (storage class, device allocation, encryption
+  # mode, etc.) from this existing template partition -- only its name
+  # differs. Either the partition name or its uuid.
+  partition_template: "costotape"
+
+  # Only used if partition_template's encryption mode is "PrivKey" -- the
+  # password required to create a partition with that encryption mode.
+  # partition_encryption_password: "${PAG_PARTITION_ENCRYPTION_PASSWORD}"
 
   # PAG user/group/ESP that PDR authenticates as; the created repository
   # is owned by this principal so PDR can write replicated objects to it.

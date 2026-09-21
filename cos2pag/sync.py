@@ -136,12 +136,41 @@ def _sync_cos_bucket(cos_cfg: dict, bucket_name: str, dry_run: bool, report: Syn
                 raise
 
 
-def _sync_pag_repository(pag_cfg: dict, bucket_name: str, dry_run: bool, report: SyncReport) -> dict | None:
+def derive_tenant(bucket_name: str, prefix_parts: int) -> str:
+    """The tenant (and thus partition) name is the leading N hyphen-
+    separated segments of the bucket name, e.g. "ctie-001" out of
+    "ctie-001-gael-nextcloud" for ``prefix_parts=2``.
+    """
+    parts = bucket_name.split("-")
+    n = max(1, min(prefix_parts, len(parts)))
+    return "-".join(parts[:n])
+
+
+def _sync_pag_repository(pag_cfg: dict, bucket_name: str, tenant_name: str, dry_run: bool, report: SyncReport) -> dict | None:
     client = _build_pag_client(pag_cfg, dry_run)
-    partition_ref = require(pag_cfg, "partition", "pag")
+    template = require(pag_cfg, "partition_template", "pag")
     owner = require(pag_cfg, "owner", "pag")
 
-    partition = client.find_partition(partition_ref)
+    partition, partition_action = client.ensure_partition(
+        tenant_name, template, encryption_password=pag_cfg.get("partition_encryption_password")
+    )
+    report.add(
+        "pag.partition",
+        changed=(partition_action == "created"),
+        skipped=(partition_action == "found"),
+        detail=f"{partition_action} partition '{tenant_name}' (cloned from '{template}')" if partition_action == "created" else f"{partition_action} partition '{tenant_name}'",
+    )
+
+    if partition is None:
+        # dry-run: the partition doesn't exist yet, so there's nothing
+        # real to list/create a repository against.
+        report.add(
+            "pag.repository",
+            changed=True,
+            detail=f"created repository '{bucket_name}' in partition '{tenant_name}'",
+        )
+        return None
+
     repo, action = client.ensure_repository(
         partition["uuid"],
         bucket_name,
@@ -247,15 +276,18 @@ def _sync_pdr_task(pdr_cfg: dict, bucket_name: str, dry_run: bool, report: SyncR
         report.add("pdr.job", changed=True, detail=f"started job for task id={task['id']}")
 
 
-def sync_bucket(config: dict, bucket_name: str, dry_run: bool = False) -> SyncReport:
+def sync_bucket(config: dict, bucket_name: str, dry_run: bool = False, tenant: str | None = None) -> SyncReport:
     report = SyncReport(bucket_name=bucket_name, dry_run=dry_run)
 
     for section in ("cos", "pag", "pdr"):
         if section not in config:
             raise ConfigError(f"Missing top-level config section '{section}'")
 
+    pag_cfg = config["pag"]
+    tenant_name = tenant or derive_tenant(bucket_name, pag_cfg.get("tenant_prefix_parts", 2))
+
     _sync_cos_bucket(config["cos"], bucket_name, dry_run, report)
-    _sync_pag_repository(config["pag"], bucket_name, dry_run, report)
+    _sync_pag_repository(pag_cfg, bucket_name, tenant_name, dry_run, report)
     _sync_pdr_task(config["pdr"], bucket_name, dry_run, report)
 
     return report

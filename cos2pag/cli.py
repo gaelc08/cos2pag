@@ -18,6 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("bucket_name", help="Name of the COS bucket to synchronize (also used as the PAG repository name)")
     parser.add_argument("-c", "--config", default="config.yaml", help="Path to the YAML config file (default: config.yaml)")
+    parser.add_argument("--tenant", default=None, help="Explicit PAG partition/tenant name, overriding the name derived from the bucket name's prefix")
     parser.add_argument("--env-file", default=".env", help="Path to a .env file with secrets (default: .env in the current directory; silently skipped if absent)")
     parser.add_argument("--dry-run", action="store_true", help="Log what would be done without sending any mutating request")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
@@ -42,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         config = load_config(args.config)
-        report = sync_bucket(config, args.bucket_name, dry_run=args.dry_run)
+        report = sync_bucket(config, args.bucket_name, dry_run=args.dry_run, tenant=args.tenant)
     except (ConfigError, ApiError, LookupError) as exc:
         logging.getLogger("cos2pag").error("%s", exc)
         return 1

@@ -4,9 +4,22 @@ import pytest
 
 from cos2pag import sync as sync_module
 from cos2pag.http_client import ApiError
-from cos2pag.sync import sync_bucket
+from cos2pag.sync import derive_tenant, sync_bucket
 
 BUCKET = "my-bucket"
+
+
+def test_derive_tenant_takes_leading_hyphen_segments():
+    assert derive_tenant("ctie-001-gael-nextcloud", 2) == "ctie-001"
+    assert derive_tenant("ctie-hive-prd-acdi", 2) == "ctie-hive"
+
+
+def test_derive_tenant_one_part():
+    assert derive_tenant("ctie-001-gael-nextcloud", 1) == "ctie"
+
+
+def test_derive_tenant_falls_back_to_whole_name_when_too_short():
+    assert derive_tenant("test", 2) == "test"
 
 
 def base_config():
@@ -20,7 +33,7 @@ def base_config():
         "pag": {
             "base_url": "https://pag.example.com",
             "auth": {"type": "basic", "username": "u", "password": "p"},
-            "partition": "PART-01",
+            "partition_template": "TEMPLATE-01",
             "owner": {"uuid": "pdr-user-uuid", "type": "User"},
         },
         "pdr": {
@@ -43,7 +56,7 @@ def fake_clients(monkeypatch):
     }
 
     pag_client = MagicMock()
-    pag_client.find_partition.return_value = {"uuid": "part-uuid", "name": "PART-01"}
+    pag_client.ensure_partition.return_value = ({"uuid": "part-uuid", "name": "my-bucket"}, "found")
     pag_client.ensure_repository.return_value = ({"uuid": "repo-uuid", "name": BUCKET}, "created")
 
     pdr_client = MagicMock()
@@ -91,6 +104,7 @@ def test_sync_bucket_full_happy_path(fake_clients):
     step_names = [s.name for s in report.steps]
     assert "cos.acl_and_firewall" in step_names
     assert "cos.notifications" in step_names
+    assert "pag.partition" in step_names
     assert "pag.repository" in step_names
     assert "pdr.task" in step_names
 
@@ -235,3 +249,60 @@ def test_sync_pdr_task_omits_notifications_when_disabled(fake_clients):
 
     (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
     assert "notifications" not in task_body
+
+
+def test_sync_bucket_derives_tenant_from_bucket_prefix(fake_clients):
+    sync_bucket(base_config(), "ctie-001-gael-nextcloud")
+
+    fake_clients["pag"].ensure_partition.assert_called_once()
+    args, kwargs = fake_clients["pag"].ensure_partition.call_args
+    assert args[0] == "ctie-001"
+    assert args[1] == "TEMPLATE-01"
+
+
+def test_sync_bucket_tenant_prefix_parts_is_configurable(fake_clients):
+    config = base_config()
+    config["pag"]["tenant_prefix_parts"] = 1
+
+    sync_bucket(config, "ctie-001-gael-nextcloud")
+
+    args, kwargs = fake_clients["pag"].ensure_partition.call_args
+    assert args[0] == "ctie"
+
+
+def test_sync_bucket_explicit_tenant_overrides_derivation(fake_clients):
+    sync_bucket(base_config(), "ctie-001-gael-nextcloud", tenant="forced-tenant")
+
+    args, kwargs = fake_clients["pag"].ensure_partition.call_args
+    assert args[0] == "forced-tenant"
+
+
+def test_sync_bucket_reports_partition_creation_as_changed(fake_clients):
+    fake_clients["pag"].ensure_partition.return_value = (
+        {"uuid": "new-part-uuid", "name": "ctie-001"},
+        "created",
+    )
+
+    report = sync_bucket(base_config(), BUCKET)
+
+    step = next(s for s in report.steps if s.name == "pag.partition")
+    assert step.changed is True
+    assert step.skipped is False
+
+
+def test_sync_bucket_reports_existing_partition_as_skipped(fake_clients):
+    report = sync_bucket(base_config(), BUCKET)  # fixture default action is "found"
+
+    step = next(s for s in report.steps if s.name == "pag.partition")
+    assert step.changed is False
+    assert step.skipped is True
+
+
+def test_sync_bucket_handles_dry_run_partition_creation_without_uuid(fake_clients):
+    fake_clients["pag"].ensure_partition.return_value = (None, "created")
+
+    report = sync_bucket(base_config(), BUCKET, dry_run=True)
+
+    fake_clients["pag"].ensure_repository.assert_not_called()
+    repo_step = next(s for s in report.steps if s.name == "pag.repository")
+    assert repo_step.changed is True
