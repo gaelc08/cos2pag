@@ -145,6 +145,7 @@ pdr:
   # management: acl/firewall/notifications).
   source_s3:
     server_url: "https://s3.govcloud.etat.lu"
+    verify_ssl: false  # see cos.verify_ssl note above
     access_key: "${PDR_COS_ACCESS_KEY}"
     secret_key: "${PDR_COS_SECRET_KEY}"
     force_path_style: true
@@ -154,9 +155,12 @@ pdr:
 
   # S3 credentials PDR uses to write to the PAG repository. Distinct from
   # pag.base_url above (4200 is PAG's admin UI/API port; 4443 is its S3
-  # data port).
+  # data port). Also used directly (via boto3) to set pag.lifecycle's S3
+  # Lifecycle Configuration on the repository -- verify_ssl matters here
+  # for that, not just for PDR's own connection.
   target_s3:
     server_url: "https://scrat-1.ctie.etat.lu:4443"
+    verify_ssl: false  # see cos.verify_ssl note above
     access_key: "${PDR_PAG_ACCESS_KEY}"
     secret_key: "${PDR_PAG_SECRET_KEY}"
     force_path_style: true
