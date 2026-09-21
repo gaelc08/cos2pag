@@ -209,6 +209,13 @@ def _sync_pag_repository(pag_cfg: dict, bucket_name: str, tenant_name: str, dry_
             changed=True,
             detail=f"created repository '{bucket_name}' in partition '{tenant_name}'",
         )
+        lifecycle_days = pag_cfg.get("lifecycle_days")
+        if lifecycle_days is not None:
+            report.add(
+                "pag.lifecycle",
+                changed=True,
+                detail=f"set {lifecycle_days}-day auto-delete lifecycle on repository '{bucket_name}'",
+            )
         return None
 
     repo, action = client.ensure_repository(
@@ -218,12 +225,37 @@ def _sync_pag_repository(pag_cfg: dict, bucket_name: str, tenant_name: str, dry_
         hidden=pag_cfg.get("hidden"),
         write_protected=pag_cfg.get("write_protected"),
         sosapi_enabled=pag_cfg.get("sosapi_enabled", False),
+        obj_ver_state=pag_cfg.get("object_versioning"),
     )
     detail = f"{action} repository '{bucket_name}' in partition '{partition.get('name')}'"
     if action == "unchanged":
         report.add("pag.repository", changed=False, skipped=True, detail=detail)
     else:
         report.add("pag.repository", changed=True, detail=detail)
+
+    lifecycle_days = pag_cfg.get("lifecycle_days")
+    if lifecycle_days is not None:
+        if repo is None:
+            # dry-run: the repository was only just simulated as created,
+            # so there's nothing real to set a retention policy on yet.
+            report.add(
+                "pag.lifecycle",
+                changed=True,
+                detail=f"set {lifecycle_days}-day auto-delete lifecycle on repository '{bucket_name}'",
+            )
+        else:
+            retention_body = {
+                "objRetMode": "PAG",
+                "objRetTimeSpan": f"P{lifecycle_days}D",
+                "enableAutoObjDestr": True,
+            }
+            policy, policy_action = client.ensure_retention_policy(partition["uuid"], repo["uuid"], retention_body)
+            policy_detail = f"{policy_action} {lifecycle_days}-day auto-delete lifecycle on repository '{bucket_name}'"
+            if policy_action == "unchanged":
+                report.add("pag.lifecycle", changed=False, skipped=True, detail=policy_detail)
+            else:
+                report.add("pag.lifecycle", changed=True, detail=policy_detail)
+
     return repo
 
 

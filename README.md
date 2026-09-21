@@ -30,7 +30,12 @@ For a given bucket name, running the tool does:
      created or already existed; skipped entirely if not configured.
    - Create an object repository with the same name as the COS bucket in
      that partition, owned by the configured PDR user (or reuse it and
-     update its owner if it already exists).
+     update its owner if it already exists), enabling object versioning
+     (`pag.object_versioning`) and setting an auto-delete lifecycle
+     policy after `pag.lifecycle_days` days if configured
+     (`/api/partitions/{partitionUuid}/repositories/{repositoryUuid}/retention_policy`,
+     `objRetMode: PAG`, `enableAutoObjDestr: true`). Omit `lifecycle_days`
+     to leave the repository's lifecycle unmanaged.
 3. **PDR** (`/api/tasks`, `/api/tasks/{id}/jobs`)
    - Create a replication task from the COS bucket (S3 source) to the PAG
      repository (S3 target), including copy/deletion options

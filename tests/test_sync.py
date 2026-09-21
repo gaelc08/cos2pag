@@ -456,3 +456,60 @@ def test_sync_bucket_skips_job_start_in_dry_run_creation(fake_clients):
     report = sync_bucket(base_config(), BUCKET, TENANT, dry_run=True)
 
     fake_clients["pdr"].start_job.assert_not_called()
+
+
+def test_sync_bucket_passes_object_versioning_to_ensure_repository(fake_clients):
+    config = base_config()
+    config["pag"]["object_versioning"] = "Enabled"
+
+    sync_bucket(config, BUCKET, TENANT)
+
+    args, kwargs = fake_clients["pag"].ensure_repository.call_args
+    assert kwargs["obj_ver_state"] == "Enabled"
+
+
+def test_sync_bucket_skips_lifecycle_when_not_configured(fake_clients):
+    report = sync_bucket(base_config(), BUCKET, TENANT)
+
+    assert not any(s.name == "pag.lifecycle" for s in report.steps)
+    fake_clients["pag"].ensure_retention_policy.assert_not_called()
+
+
+def test_sync_bucket_sets_lifecycle_policy_with_correct_body(fake_clients):
+    config = base_config()
+    config["pag"]["lifecycle_days"] = 90
+    fake_clients["pag"].ensure_retention_policy.return_value = ({"objRetMode": "PAG"}, "updated")
+
+    report = sync_bucket(config, BUCKET, TENANT)
+
+    fake_clients["pag"].ensure_retention_policy.assert_called_once_with(
+        "part-uuid",
+        "repo-uuid",
+        {"objRetMode": "PAG", "objRetTimeSpan": "P90D", "enableAutoObjDestr": True},
+    )
+    step = next(s for s in report.steps if s.name == "pag.lifecycle")
+    assert step.changed is True
+
+
+def test_sync_bucket_reports_unchanged_lifecycle_as_skipped(fake_clients):
+    config = base_config()
+    config["pag"]["lifecycle_days"] = 90
+    fake_clients["pag"].ensure_retention_policy.return_value = ({"objRetMode": "PAG"}, "unchanged")
+
+    report = sync_bucket(config, BUCKET, TENANT)
+
+    step = next(s for s in report.steps if s.name == "pag.lifecycle")
+    assert step.skipped is True
+    assert step.changed is False
+
+
+def test_sync_bucket_skips_lifecycle_call_when_partition_not_yet_created(fake_clients):
+    config = base_config()
+    config["pag"]["lifecycle_days"] = 90
+    fake_clients["pag"].ensure_partition.return_value = (None, "created")
+
+    report = sync_bucket(config, BUCKET, TENANT, dry_run=True)
+
+    fake_clients["pag"].ensure_retention_policy.assert_not_called()
+    step = next(s for s in report.steps if s.name == "pag.lifecycle")
+    assert step.changed is True

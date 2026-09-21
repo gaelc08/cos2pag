@@ -178,6 +178,7 @@ class PagClient:
         hidden: bool | None = None,
         write_protected: bool | None = None,
         sosapi_enabled: bool | None = None,
+        obj_ver_state: str | None = None,
     ) -> tuple[dict[str, Any] | None, str]:
         """Create the repository if missing, or patch it only if something
         actually differs from an existing one.
@@ -195,6 +196,8 @@ class PagClient:
             body["writeProtected"] = write_protected
         if sosapi_enabled is not None:
             body["sosapiEnabled"] = sosapi_enabled
+        if obj_ver_state is not None:
+            body["objVerState"] = obj_ver_state
 
         if existing is None:
             return self.create_repository(partition_uuid, body), "created"
@@ -206,10 +209,46 @@ class PagClient:
             or (hidden is not None and existing.get("hidden") != hidden)
             or (write_protected is not None and existing.get("writeProtected") != write_protected)
             or (sosapi_enabled is not None and existing.get("sosapiEnabled") != sosapi_enabled)
+            or (obj_ver_state is not None and existing.get("objVerState") != obj_ver_state)
         )
         if not needs_update:
             return existing, "unchanged"
         return self.update_repository(partition_uuid, existing["uuid"], body), "updated"
+
+    def get_retention_policy(self, partition_uuid: str, repository_uuid: str) -> dict[str, Any] | None:
+        return request_json(
+            self.session,
+            "GET",
+            self._url(f"/api/partitions/{partition_uuid}/repositories/{repository_uuid}/retention_policy"),
+            timeout=self.timeout,
+        )
+
+    def set_retention_policy(self, partition_uuid: str, repository_uuid: str, body: dict[str, Any]) -> dict[str, Any] | None:
+        return request_json(
+            self.session,
+            "PUT",
+            self._url(f"/api/partitions/{partition_uuid}/repositories/{repository_uuid}/retention_policy"),
+            timeout=self.timeout,
+            json=body,
+            dry_run=self.dry_run,
+        )
+
+    def ensure_retention_policy(
+        self, partition_uuid: str, repository_uuid: str, desired: dict[str, Any]
+    ) -> tuple[dict[str, Any] | None, str]:
+        """Set the repository's retention/lifecycle policy (PUT replaces
+        it wholesale) unless it already matches every field in
+        ``desired``.
+
+        Returns ``(policy, action)`` where action is "updated" or
+        "unchanged". A repository always has *some* retention policy
+        (default `objRetMode: "None"`), so there's no "created" state
+        here.
+        """
+        existing = self.get_retention_policy(partition_uuid, repository_uuid)
+        if existing is not None and all(existing.get(k) == v for k, v in desired.items()):
+            return existing, "unchanged"
+        return self.set_retention_policy(partition_uuid, repository_uuid, desired), "updated"
 
 
 __all__ = ["PagClient", "ApiError"]

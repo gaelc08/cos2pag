@@ -109,6 +109,14 @@ pag:
   # cover this function" (ModifyObjectRepository).
   sosapi_enabled: false
 
+  # Object versioning on the repository (Disabled | Suspended | Enabled).
+  object_versioning: "Enabled"
+
+  # Auto-delete objects after this many days (sets the repository's
+  # retention policy: objRetMode=PAG, enableAutoObjDestr=true). Omit this
+  # key entirely to leave the repository's lifecycle unmanaged.
+  lifecycle_days: 90   # CHANGE_ME -- confirm the real retention target
+
 pdr:
   base_url: "https://hathor-1.ctie.etat.lu:3601"
   auth:
@@ -153,7 +161,7 @@ pdr:
     max_parallel_jobs: 2
     check_destination: false
     enable_deletion: true
-    delete_delay_days: 30   # default delay, in days, before a source deletion is mirrored to the target -- override per run with --delete-delay-days
+    delete_delay_days: 0   # default delay, in days, before a source deletion is mirrored to the target (0 = immediately) -- override per run with --delete-delay-days
 
   schedule:
     enabled: true

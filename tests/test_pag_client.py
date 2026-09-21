@@ -190,3 +190,74 @@ def test_get_persistent_buffer_returns_none_on_404(monkeypatch):
     monkeypatch.setattr("cos2pag.pag_client.request_json", fake_request_json)
 
     assert client.get_persistent_buffer(PARTITION_UUID) is None
+
+
+def test_ensure_repository_patches_when_obj_ver_state_differs(monkeypatch):
+    existing = {
+        "uuid": "existing-uuid",
+        "name": BUCKET,
+        "owner": {"uuid": "pdr-uuid", "type": "User"},
+        "objVerState": "Disabled",
+    }
+    client = make_client(monkeypatch, existing_repo=existing)
+
+    repo, action = client.ensure_repository(PARTITION_UUID, BUCKET, OWNER, obj_ver_state="Enabled")
+
+    assert action == "updated"
+    client.update_repository.assert_called_once()
+    (call_partition, call_uuid, call_body) = client.update_repository.call_args.args
+    assert call_body["objVerState"] == "Enabled"
+
+
+def test_ensure_repository_unchanged_when_obj_ver_state_already_matches(monkeypatch):
+    existing = {
+        "uuid": "existing-uuid",
+        "name": BUCKET,
+        "owner": {"uuid": "pdr-uuid", "type": "User"},
+        "objVerState": "Enabled",
+    }
+    client = make_client(monkeypatch, existing_repo=existing)
+
+    repo, action = client.ensure_repository(PARTITION_UUID, BUCKET, OWNER, obj_ver_state="Enabled")
+
+    assert action == "unchanged"
+    client.update_repository.assert_not_called()
+
+
+def make_retention_client(monkeypatch, existing=None):
+    client = PagClient.__new__(PagClient)
+    monkeypatch.setattr(client, "get_retention_policy", lambda partition_uuid, repository_uuid: existing)
+    monkeypatch.setattr(client, "set_retention_policy", MagicMock(return_value={"objRetMode": "PAG"}))
+    return client
+
+
+def test_ensure_retention_policy_updates_when_absent(monkeypatch):
+    client = make_retention_client(monkeypatch, existing=None)
+    desired = {"objRetMode": "PAG", "objRetTimeSpan": "P30D", "enableAutoObjDestr": True}
+
+    policy, action = client.ensure_retention_policy(PARTITION_UUID, "repo-uuid", desired)
+
+    assert action == "updated"
+    client.set_retention_policy.assert_called_once_with(PARTITION_UUID, "repo-uuid", desired)
+
+
+def test_ensure_retention_policy_unchanged_when_matching(monkeypatch):
+    existing = {"objRetMode": "PAG", "objRetTimeSpan": "P30D", "enableAutoObjDestr": True, "objRetAbsDate": None}
+    client = make_retention_client(monkeypatch, existing=existing)
+    desired = {"objRetMode": "PAG", "objRetTimeSpan": "P30D", "enableAutoObjDestr": True}
+
+    policy, action = client.ensure_retention_policy(PARTITION_UUID, "repo-uuid", desired)
+
+    assert action == "unchanged"
+    client.set_retention_policy.assert_not_called()
+
+
+def test_ensure_retention_policy_updates_when_differs(monkeypatch):
+    existing = {"objRetMode": "None", "objRetTimeSpan": None, "enableAutoObjDestr": False}
+    client = make_retention_client(monkeypatch, existing=existing)
+    desired = {"objRetMode": "PAG", "objRetTimeSpan": "P30D", "enableAutoObjDestr": True}
+
+    policy, action = client.ensure_retention_policy(PARTITION_UUID, "repo-uuid", desired)
+
+    assert action == "updated"
+    client.set_retention_policy.assert_called_once_with(PARTITION_UUID, "repo-uuid", desired)
