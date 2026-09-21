@@ -79,34 +79,59 @@ pdr:
 
   # S3 credentials PDR uses to read from the COS bucket.
   # This is the S3 *data* endpoint (object GET/PUT), distinct from
-  # cos.base_url above (8337 is the Service API used only for bucket
+  # cos.base_url above (8338 is the Service API used only for bucket
   # management: acl/firewall/notifications).
   source_s3:
-    server_url: "https://s3.govcloud.etat.lu:443"
+    server_url: "https://s3.govcloud.etat.lu"
     access_key: "${PDR_COS_ACCESS_KEY}"
     secret_key: "${PDR_COS_SECRET_KEY}"
     force_path_style: true
     signature_version: 4
+    timeout: 300
+    max_error_retry: 2
 
-  # S3 credentials PDR uses to write to the PAG repository (requires
-  # sosapi_enabled: true above). Distinct from pag.base_url above (4200
-  # is PAG's admin UI/API port; 4443 is its S3/SOSAPI data port).
+  # S3 credentials PDR uses to write to the PAG repository. Distinct from
+  # pag.base_url above (4200 is PAG's admin UI/API port; 4443 is its S3
+  # data port).
   target_s3:
     server_url: "https://scrat-1.ctie.etat.lu:4443"
     access_key: "${PDR_PAG_ACCESS_KEY}"
     secret_key: "${PDR_PAG_SECRET_KEY}"
     force_path_style: true
     signature_version: 4
+    timeout: 300
+    max_error_retry: 2
 
   copy_options:
-    acl: true
+    acl: false
     tags: true
     metadata: true
     object_lock: false
-    max_parallel_jobs: 4
+    mpu_part_size_mb: 0
+    read_in_tape_order: false
+    max_parallel_jobs: 2
+    check_destination: false
+    enable_deletion: true
+    delete_delay_days: 30   # retention before a source deletion is mirrored -- 30 / 60 / 90, confirm with the team
 
   schedule:
-    enabled: false
+    enabled: true
+    week_multiplier: 1
+    dow_mask: 64    # bitmask of days of week the job runs on
+    hour: 2         # local hour of day the job starts
+
+  # Object-change notifications for the replication task itself (separate
+  # from cos.notifications, which configures COS's own bucket
+  # notifications). Uses IBM COS's Kafka notification schema.
+  notifications:
+    enabled: true
+    type: kafka
+    kafka:
+      schema: IBMCOS
+      server_url: "thoth-1.ctie.etat.lu:9092,thoth-2.ctie.etat.lu:9092,thoth-3.ctie.etat.lu:9092"
+      connection_type: "None"
+      # topic defaults to the bucket name if omitted, same convention as
+      # cos.notifications
 
   # Kick off an initial replication job right after the task is created.
   auto_start_job: false

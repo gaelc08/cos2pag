@@ -19,7 +19,11 @@ For a given bucket name, running the tool does:
      it and update its owner if it already exists).
 3. **PDR** (`/api/tasks`)
    - Create a replication task from the COS bucket (S3 source) to the PAG
-     repository (S3 target).
+     repository (S3 target), including copy/deletion options
+     (`pdr.copy_options`), a schedule (`pdr.schedule`), and Kafka/SQS
+     object-change notifications for the task itself (`pdr.notifications`,
+     separate from `cos.notifications`) if configured. The Kafka topic
+     defaults to the bucket's own name, same convention as COS.
 
 Every step is idempotent: re-running the tool on a bucket that is already
 fully set up is a no-op (each step is reported as `SKIPPED`/`OK`).

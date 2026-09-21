@@ -176,10 +176,18 @@ def _sync_pdr_task(pdr_cfg: dict, bucket_name: str, dry_run: bool, report: SyncR
             "timeout": s3_cfg.get("timeout"),
         }
 
+    def task_side(s3_cfg: dict) -> dict:
+        # maxErrorRetry lives on the task side (source/target), as a
+        # sibling of "s3", not inside the s3 options block itself.
+        side: dict[str, Any] = {"type": "s3", "s3": s3_options(s3_cfg)}
+        if s3_cfg.get("max_error_retry") is not None:
+            side["maxErrorRetry"] = s3_cfg["max_error_retry"]
+        return side
+
     task_body: dict[str, Any] = {
         "alias": bucket_name,
-        "source": {"type": "s3", "s3": s3_options(source_s3_cfg)},
-        "target": {"type": "s3", "s3": s3_options(target_s3_cfg)},
+        "source": task_side(source_s3_cfg),
+        "target": task_side(target_s3_cfg),
     }
     if "copy_options" in pdr_cfg:
         co = pdr_cfg["copy_options"]
@@ -204,6 +212,28 @@ def _sync_pdr_task(pdr_cfg: dict, bucket_name: str, dry_run: bool, report: SyncR
             "dowMask": sch.get("dow_mask"),
             "hour": sch.get("hour"),
         }
+    if pdr_cfg.get("notifications", {}).get("enabled"):
+        notif_cfg = pdr_cfg["notifications"]
+        notif_body: dict[str, Any] = {"enabled": True, "type": notif_cfg.get("type")}
+        if "kafka" in notif_cfg:
+            k = notif_cfg["kafka"]
+            notif_body["kafka"] = {
+                "schema": k.get("schema"),
+                "serverURL": k.get("server_url"),
+                "connectionType": k.get("connection_type"),
+                # Mirrors the COS-side notification topic: one topic per
+                # bucket, named after the bucket, unless overridden.
+                "topic": k.get("topic", bucket_name),
+            }
+        if "sqs" in notif_cfg:
+            s = notif_cfg["sqs"]
+            notif_body["sqs"] = {
+                "serverURL": s.get("server_url"),
+                "queue": s.get("queue"),
+                "accessKey": s.get("access_key"),
+                "secretKey": s.get("secret_key"),
+            }
+        task_body["notifications"] = notif_body
 
     task, created = client.ensure_task(task_body)
     report.add(

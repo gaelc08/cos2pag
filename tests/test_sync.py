@@ -156,3 +156,74 @@ def test_sync_bucket_skips_pag_patch_when_repository_unchanged(fake_clients):
     step = next(s for s in report.steps if s.name == "pag.repository")
     assert step.skipped is True
     assert step.changed is False
+
+
+def test_sync_pdr_task_includes_max_error_retry_when_configured(fake_clients):
+    config = base_config()
+    config["pdr"]["source_s3"]["max_error_retry"] = 2
+    config["pdr"]["target_s3"]["max_error_retry"] = 2
+
+    sync_bucket(config, BUCKET)
+
+    (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
+    assert task_body["source"]["maxErrorRetry"] == 2
+    assert task_body["target"]["maxErrorRetry"] == 2
+
+
+def test_sync_pdr_task_omits_max_error_retry_when_not_configured(fake_clients):
+    sync_bucket(base_config(), BUCKET)
+
+    (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
+    assert "maxErrorRetry" not in task_body["source"]
+    assert "maxErrorRetry" not in task_body["target"]
+
+
+def test_sync_pdr_task_includes_kafka_notifications_defaulting_topic_to_bucket_name(fake_clients):
+    config = base_config()
+    config["pdr"]["notifications"] = {
+        "enabled": True,
+        "type": "kafka",
+        "kafka": {
+            "schema": "IBMCOS",
+            "server_url": "thoth-1:9092,thoth-2:9092",
+            "connection_type": "None",
+        },
+    }
+
+    sync_bucket(config, BUCKET)
+
+    (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
+    assert task_body["notifications"] == {
+        "enabled": True,
+        "type": "kafka",
+        "kafka": {
+            "schema": "IBMCOS",
+            "serverURL": "thoth-1:9092,thoth-2:9092",
+            "connectionType": "None",
+            "topic": BUCKET,
+        },
+    }
+
+
+def test_sync_pdr_task_notifications_topic_can_be_overridden(fake_clients):
+    config = base_config()
+    config["pdr"]["notifications"] = {
+        "enabled": True,
+        "type": "kafka",
+        "kafka": {"topic": "fixed-topic"},
+    }
+
+    sync_bucket(config, BUCKET)
+
+    (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
+    assert task_body["notifications"]["kafka"]["topic"] == "fixed-topic"
+
+
+def test_sync_pdr_task_omits_notifications_when_disabled(fake_clients):
+    config = base_config()
+    config["pdr"]["notifications"] = {"enabled": False}
+
+    sync_bucket(config, BUCKET)
+
+    (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
+    assert "notifications" not in task_body
