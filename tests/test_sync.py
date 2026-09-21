@@ -9,17 +9,26 @@ from cos2pag.sync import derive_tenant, sync_bucket
 BUCKET = "my-bucket"
 
 
-def test_derive_tenant_takes_leading_hyphen_segments():
-    assert derive_tenant("ctie-001-gael-nextcloud", 2) == "ctie-001"
-    assert derive_tenant("ctie-hive-prd-acdi", 2) == "ctie-hive"
+def test_derive_tenant_matches_known_tenant_case_insensitively():
+    assert derive_tenant("ctie-001-gael-nextcloud", ["CTIE-001", "ABP"]) == "CTIE-001"
 
 
-def test_derive_tenant_one_part():
-    assert derive_tenant("ctie-001-gael-nextcloud", 1) == "ctie"
+def test_derive_tenant_picks_longest_most_specific_match():
+    # "CTIE" would also match as a prefix, but "CTIE-001" is more specific.
+    assert derive_tenant("ctie-001-gael-nextcloud", ["CTIE", "CTIE-001"]) == "CTIE-001"
 
 
-def test_derive_tenant_falls_back_to_whole_name_when_too_short():
-    assert derive_tenant("test", 2) == "test"
+def test_derive_tenant_matches_exact_bucket_name_as_tenant():
+    assert derive_tenant("abp", ["ABP", "CTIE-001"]) == "ABP"
+
+
+def test_derive_tenant_returns_none_when_no_known_tenant_matches():
+    assert derive_tenant("unknown-bucket-name", ["ABP", "CTIE-001"]) is None
+
+
+def test_derive_tenant_does_not_match_on_partial_word_without_hyphen_boundary():
+    # "AB" must not match "ABP-something" style false positives.
+    assert derive_tenant("abpxyz-bucket", ["ABP"]) is None
 
 
 def base_config():
@@ -56,7 +65,8 @@ def fake_clients(monkeypatch):
     }
 
     pag_client = MagicMock()
-    pag_client.ensure_partition.return_value = ({"uuid": "part-uuid", "name": "my-bucket"}, "found")
+    pag_client.list_partitions.return_value = [{"uuid": "part-uuid", "name": "my"}]
+    pag_client.ensure_partition.return_value = ({"uuid": "part-uuid", "name": "my"}, "found")
     pag_client.ensure_repository.return_value = ({"uuid": "repo-uuid", "name": BUCKET}, "created")
 
     pdr_client = MagicMock()
@@ -251,28 +261,30 @@ def test_sync_pdr_task_omits_notifications_when_disabled(fake_clients):
     assert "notifications" not in task_body
 
 
-def test_sync_bucket_derives_tenant_from_bucket_prefix(fake_clients):
+def test_sync_bucket_derives_tenant_by_matching_existing_partitions(fake_clients):
+    fake_clients["pag"].list_partitions.return_value = [{"name": "CTIE-001"}, {"name": "ABP"}]
+
     sync_bucket(base_config(), "ctie-001-gael-nextcloud")
 
     fake_clients["pag"].ensure_partition.assert_called_once()
     args, kwargs = fake_clients["pag"].ensure_partition.call_args
-    assert args[0] == "ctie-001"
+    assert args[0] == "CTIE-001"
     assert args[1] == {"devType": "Tape", "storageClassTypes": ["Standard"]}
 
 
-def test_sync_bucket_tenant_prefix_parts_is_configurable(fake_clients):
-    config = base_config()
-    config["pag"]["tenant_prefix_parts"] = 1
+def test_sync_bucket_raises_clear_error_for_unmatched_new_tenant(fake_clients):
+    fake_clients["pag"].list_partitions.return_value = [{"name": "ABP"}]
 
-    sync_bucket(config, "ctie-001-gael-nextcloud")
+    from cos2pag.config import ConfigError
 
-    args, kwargs = fake_clients["pag"].ensure_partition.call_args
-    assert args[0] == "ctie"
+    with pytest.raises(ConfigError):
+        sync_bucket(base_config(), "brand-new-tenant-bucket")
 
 
 def test_sync_bucket_explicit_tenant_overrides_derivation(fake_clients):
     sync_bucket(base_config(), "ctie-001-gael-nextcloud", tenant="forced-tenant")
 
+    fake_clients["pag"].list_partitions.assert_not_called()
     args, kwargs = fake_clients["pag"].ensure_partition.call_args
     assert args[0] == "forced-tenant"
 

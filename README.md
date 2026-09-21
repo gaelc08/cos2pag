@@ -14,13 +14,18 @@ For a given bucket name, running the tool does:
      replaces them wholesale on PATCH).
    - `PATCH` the bucket's `notifications.topic` to the bucket's own name.
 2. **PAG** (`/api/partitions`, `/api/partitions/{partitionUuid}/repositories`)
-   - Resolve the tenant's partition: its name is the leading N
-     hyphen-separated segments of the bucket name (`pag.tenant_prefix_parts`,
-     e.g. `ctie-001` out of `ctie-001-gael-nextcloud`), overridable with
-     `--tenant`. If that partition doesn't exist yet, it's created with
-     the settings in `pag.new_partition_defaults` (a static config block
-     you fill in once, e.g. copied from an existing reference partition
-     like "costotape") — only the name differs.
+   - Resolve the tenant's partition: matched against existing PAG
+     partitions by the longest prefix of the bucket name
+     (case-insensitively — e.g. bucket `ctie-001-gael-nextcloud` matches
+     existing partition `CTIE-001`). There's no fixed number of
+     hyphen-separated segments across tenants (`ABP`, `CTIE-001`,
+     `eADEM-TRAIN-1` are all real tenant names), so this only finds
+     tenants that already have a partition; for a brand-new tenant, pass
+     `--tenant <name>` to name it explicitly. If that partition doesn't
+     exist yet, it's created with the settings in
+     `pag.new_partition_defaults` (a static config block you fill in
+     once, e.g. copied from an existing reference partition like
+     "costotape") — only the name differs.
    - Create an object repository with the same name as the COS bucket in
      that partition, owned by the configured PDR user (or reuse it and
      update its owner if it already exists).

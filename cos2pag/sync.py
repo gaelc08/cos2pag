@@ -136,20 +136,42 @@ def _sync_cos_bucket(cos_cfg: dict, bucket_name: str, dry_run: bool, report: Syn
                 raise
 
 
-def derive_tenant(bucket_name: str, prefix_parts: int) -> str:
-    """The tenant (and thus partition) name is the leading N hyphen-
-    separated segments of the bucket name, e.g. "ctie-001" out of
-    "ctie-001-gael-nextcloud" for ``prefix_parts=2``.
+def derive_tenant(bucket_name: str, known_tenants: list[str]) -> str | None:
+    """Match the bucket name against known partition/tenant names
+    (case-insensitively), picking the longest -- i.e. most specific --
+    one where the bucket name equals the tenant or starts with
+    "<tenant>-". There's no fixed number of hyphen-separated segments
+    across tenants (e.g. "ABP", "CTIE-001", "eADEM-TRAIN-1" are all real
+    tenant names), so a fixed-segment-count heuristic can't work; this
+    only works for tenants that already have a partition. Returns
+    ``None`` if nothing matches (e.g. a genuinely new tenant), in which
+    case the caller must be given the tenant explicitly.
     """
-    parts = bucket_name.split("-")
-    n = max(1, min(prefix_parts, len(parts)))
-    return "-".join(parts[:n])
+    bucket_lower = bucket_name.lower()
+    best: str | None = None
+    for tenant in known_tenants:
+        tenant_lower = tenant.lower()
+        if bucket_lower == tenant_lower or bucket_lower.startswith(tenant_lower + "-"):
+            if best is None or len(tenant) > len(best):
+                best = tenant
+    return best
 
 
-def _sync_pag_repository(pag_cfg: dict, bucket_name: str, tenant_name: str, dry_run: bool, report: SyncReport) -> dict | None:
+def _sync_pag_repository(pag_cfg: dict, bucket_name: str, tenant_override: str | None, dry_run: bool, report: SyncReport) -> dict | None:
     client = _build_pag_client(pag_cfg, dry_run)
     partition_defaults = require(pag_cfg, "new_partition_defaults", "pag")
     owner = require(pag_cfg, "owner", "pag")
+
+    if tenant_override:
+        tenant_name = tenant_override
+    else:
+        known_tenants = [p["name"] for p in client.list_partitions() if p.get("name")]
+        tenant_name = derive_tenant(bucket_name, known_tenants)
+        if tenant_name is None:
+            raise ConfigError(
+                f"Could not match bucket '{bucket_name}' to an existing PAG partition/tenant. "
+                "Pass --tenant explicitly (e.g. this looks like a brand-new tenant)."
+            )
 
     partition, partition_action = client.ensure_partition(
         tenant_name, partition_defaults, encryption_password=pag_cfg.get("partition_encryption_password")
@@ -283,11 +305,8 @@ def sync_bucket(config: dict, bucket_name: str, dry_run: bool = False, tenant: s
         if section not in config:
             raise ConfigError(f"Missing top-level config section '{section}'")
 
-    pag_cfg = config["pag"]
-    tenant_name = tenant or derive_tenant(bucket_name, pag_cfg.get("tenant_prefix_parts", 2))
-
     _sync_cos_bucket(config["cos"], bucket_name, dry_run, report)
-    _sync_pag_repository(pag_cfg, bucket_name, tenant_name, dry_run, report)
+    _sync_pag_repository(config["pag"], bucket_name, tenant, dry_run, report)
     _sync_pdr_task(config["pdr"], bucket_name, dry_run, report)
 
     return report
