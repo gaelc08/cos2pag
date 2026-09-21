@@ -99,6 +99,13 @@ request (`GET`s are still executed so the plan reflects real current
 state), `-v` for debug logging, and `--tenant <name>` to force the PAG
 partition/tenant name instead of deriving it from the bucket name.
 
+**First bucket for a given tenant**: since tenant matching only works
+against partitions that already exist in PAG, the very first bucket for
+a new tenant needs `--tenant <NAME>` explicitly (e.g.
+`--tenant CTIE-001`) — that also creates the tenant's partition. Every
+later bucket for that same tenant is then auto-matched from the bucket
+name prefix, no `--tenant` needed.
+
 ## Important safety note on the IP whitelist
 
 If a bucket currently has **no** `allowed_ip` list at all, it is reachable
