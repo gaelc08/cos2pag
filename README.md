@@ -31,13 +31,17 @@ For a given bucket name, running the tool does:
    - Create an object repository with the same name as the COS bucket in
      that partition, owned by the configured PDR user (or reuse it and
      update its owner if it already exists).
-3. **PDR** (`/api/tasks`)
+3. **PDR** (`/api/tasks`, `/api/tasks/{id}/jobs`)
    - Create a replication task from the COS bucket (S3 source) to the PAG
      repository (S3 target), including copy/deletion options
      (`pdr.copy_options`), a schedule (`pdr.schedule`), and Kafka/SQS
      object-change notifications for the task itself (`pdr.notifications`,
      separate from `cos.notifications`) if configured. The Kafka topic
      defaults to the bucket's own name, same convention as COS.
+   - When the task is newly created, immediately start an initial `Copy`
+     job on it. Notifications/schedule only pick up *future* object
+     changes, so without this, anything already written to the bucket
+     before replication was set up would never get copied.
 
 Every step is idempotent: re-running the tool on a bucket that is already
 fully set up is a no-op (each step is reported as `SKIPPED`/`OK`).

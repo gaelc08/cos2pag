@@ -173,6 +173,3 @@ pdr:
       connection_type: "None"
       # topic defaults to the bucket name if omitted, same convention as
       # cos.notifications
-
-  # Kick off an initial replication job right after the task is created.
-  auto_start_job: false

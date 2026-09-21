@@ -409,3 +409,39 @@ def test_sync_bucket_delete_delay_days_default_from_config(fake_clients):
 
     (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
     assert task_body["options"]["deleteDelayDays"] == 30
+
+
+def test_sync_bucket_starts_initial_copy_job_when_task_created(fake_clients):
+    fake_clients["pdr"].ensure_task.return_value = ({"id": 42, "alias": BUCKET}, "created")
+
+    report = sync_bucket(base_config(), BUCKET, TENANT)
+
+    fake_clients["pdr"].start_job.assert_called_once_with(42)
+    step = next(s for s in report.steps if s.name == "pdr.job")
+    assert step.changed is True
+
+
+def test_sync_bucket_does_not_start_job_when_task_already_existed(fake_clients):
+    fake_clients["pdr"].ensure_task.return_value = ({"id": 42, "alias": BUCKET}, "unchanged")
+
+    report = sync_bucket(base_config(), BUCKET, TENANT)
+
+    fake_clients["pdr"].start_job.assert_not_called()
+    assert not any(s.name == "pdr.job" for s in report.steps)
+
+
+def test_sync_bucket_does_not_start_job_when_task_updated(fake_clients):
+    fake_clients["pdr"].ensure_task.return_value = ({"id": 42, "alias": BUCKET}, "updated")
+
+    report = sync_bucket(base_config(), BUCKET, TENANT)
+
+    fake_clients["pdr"].start_job.assert_not_called()
+    assert not any(s.name == "pdr.job" for s in report.steps)
+
+
+def test_sync_bucket_skips_job_start_in_dry_run_creation(fake_clients):
+    fake_clients["pdr"].ensure_task.return_value = (None, "created")
+
+    report = sync_bucket(base_config(), BUCKET, TENANT, dry_run=True)
+
+    fake_clients["pdr"].start_job.assert_not_called()
