@@ -235,15 +235,14 @@ def _sync_pdr_task(pdr_cfg: dict, bucket_name: str, dry_run: bool, report: SyncR
             }
         task_body["notifications"] = notif_body
 
-    task, created = client.ensure_task(task_body)
-    report.add(
-        "pdr.task",
-        changed=created,
-        skipped=not created,
-        detail=f"{'created' if created else 'already exists'} replication task alias='{bucket_name}'",
-    )
+    task, action = client.ensure_task(task_body)
+    detail = f"{action} replication task alias='{bucket_name}'"
+    if action == "unchanged":
+        report.add("pdr.task", changed=False, skipped=True, detail=detail)
+    else:
+        report.add("pdr.task", changed=True, detail=detail)
 
-    if created and pdr_cfg.get("auto_start_job") and task is not None and task.get("id") is not None:
+    if action == "created" and pdr_cfg.get("auto_start_job") and task is not None and task.get("id") is not None:
         client.start_job(task["id"])
         report.add("pdr.job", changed=True, detail=f"started job for task id={task['id']}")
 

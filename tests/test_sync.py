@@ -47,7 +47,7 @@ def fake_clients(monkeypatch):
     pag_client.ensure_repository.return_value = ({"uuid": "repo-uuid", "name": BUCKET}, "created")
 
     pdr_client = MagicMock()
-    pdr_client.ensure_task.return_value = ({"id": 42, "alias": BUCKET}, True)
+    pdr_client.ensure_task.return_value = ({"id": 42, "alias": BUCKET}, "created")
 
     monkeypatch.setattr(sync_module, "_build_cos_client", lambda cfg, dry_run: cos_client)
     monkeypatch.setattr(sync_module, "_build_pag_client", lambda cfg, dry_run: pag_client)
@@ -111,11 +111,19 @@ def test_sync_bucket_skips_cos_patch_when_already_up_to_date(fake_clients):
 
 
 def test_sync_bucket_reuses_existing_pdr_task(fake_clients):
-    fake_clients["pdr"].ensure_task.return_value = ({"id": 42, "alias": BUCKET}, False)
+    fake_clients["pdr"].ensure_task.return_value = ({"id": 42, "alias": BUCKET}, "unchanged")
     report = sync_bucket(base_config(), BUCKET)
     step = next(s for s in report.steps if s.name == "pdr.task")
     assert step.skipped is True
     assert step.changed is False
+
+
+def test_sync_bucket_reports_updated_pdr_task_as_changed(fake_clients):
+    fake_clients["pdr"].ensure_task.return_value = ({"id": 42, "alias": BUCKET}, "updated")
+    report = sync_bucket(base_config(), BUCKET)
+    step = next(s for s in report.steps if s.name == "pdr.task")
+    assert step.skipped is False
+    assert step.changed is True
 
 
 def test_sync_bucket_tolerates_notifications_rejected_by_cos(fake_clients):
