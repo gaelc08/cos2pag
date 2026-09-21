@@ -21,7 +21,7 @@ def test_main_loads_env_file_before_config(tmp_path, monkeypatch):
 
     captured = {}
 
-    def fake_sync_bucket(config, bucket_name, tenant, dry_run=False, delete_delay_days=None):
+    def fake_sync_bucket(config, bucket_name, tenant, dry_run=False, lifecycle_days=None):
         captured["config"] = config
         report = MagicMock()
         report.steps = []
@@ -49,7 +49,7 @@ def test_main_env_file_overrides_stale_shell_export(tmp_path, monkeypatch):
 
     captured = {}
 
-    def fake_sync_bucket(config, bucket_name, tenant, dry_run=False, delete_delay_days=None):
+    def fake_sync_bucket(config, bucket_name, tenant, dry_run=False, lifecycle_days=None):
         captured["config"] = config
         report = MagicMock()
         report.steps = []

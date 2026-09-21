@@ -42,7 +42,10 @@ For a given bucket name, running the tool does:
      (`pdr.copy_options`), a schedule (`pdr.schedule`), and Kafka/SQS
      object-change notifications for the task itself (`pdr.notifications`,
      separate from `cos.notifications`) if configured. The Kafka topic
-     defaults to the bucket's own name, same convention as COS.
+     defaults to the bucket's own name, same convention as COS. Deletion
+     Delay is always 0 (deletions mirror immediately) — object
+     retention/expiry is governed entirely by PAG's lifecycle policy
+     (`pag.lifecycle_days`) instead.
    - When the task is newly created, immediately start an initial `Copy`
      job on it (`pdr.auto_start_job`, default `true`). Notifications/
      schedule only pick up *future* object changes, so without this,
@@ -113,8 +116,8 @@ this run creates it.
 
 Add `--dry-run` to see what would be sent without making any mutating
 request (`GET`s are still executed so the plan reflects real current
-state), `-v` for debug logging, and `--delete-delay-days <N>` to override
-`pdr.copy_options.delete_delay_days` for this run only.
+state), `-v` for debug logging, and `--lifecycle-days <N>` to override
+`pag.lifecycle_days` for this run only.
 
 ## Important safety note on the IP whitelist
 

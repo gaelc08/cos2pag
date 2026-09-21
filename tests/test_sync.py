@@ -391,24 +391,42 @@ def test_sync_bucket_skips_persistent_buffer_call_when_partition_not_yet_created
     assert step.changed is True
 
 
-def test_sync_bucket_delete_delay_days_override(fake_clients):
+def test_sync_pdr_task_delete_delay_days_is_always_zero(fake_clients):
     config = base_config()
-    config["pdr"]["copy_options"] = {"delete_delay_days": 30}
-
-    sync_bucket(config, BUCKET, TENANT, delete_delay_days=90)
-
-    (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
-    assert task_body["options"]["deleteDelayDays"] == 90
-
-
-def test_sync_bucket_delete_delay_days_default_from_config(fake_clients):
-    config = base_config()
-    config["pdr"]["copy_options"] = {"delete_delay_days": 30}
+    config["pdr"]["copy_options"] = {"delete_delay_days": 30}  # ignored on purpose
 
     sync_bucket(config, BUCKET, TENANT)
 
     (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
-    assert task_body["options"]["deleteDelayDays"] == 30
+    assert task_body["options"]["deleteDelayDays"] == 0
+
+
+def test_sync_bucket_lifecycle_days_override(fake_clients):
+    config = base_config()
+    config["pag"]["lifecycle_days"] = 30
+    fake_clients["pag"].ensure_retention_policy.return_value = ({"objRetMode": "PAG"}, "updated")
+
+    sync_bucket(config, BUCKET, TENANT, lifecycle_days=90)
+
+    fake_clients["pag"].ensure_retention_policy.assert_called_once_with(
+        "part-uuid",
+        "repo-uuid",
+        {"objRetMode": "PAG", "objRetTimeSpan": "P90D", "enableAutoObjDestr": True},
+    )
+
+
+def test_sync_bucket_lifecycle_days_default_from_config(fake_clients):
+    config = base_config()
+    config["pag"]["lifecycle_days"] = 30
+    fake_clients["pag"].ensure_retention_policy.return_value = ({"objRetMode": "PAG"}, "updated")
+
+    sync_bucket(config, BUCKET, TENANT)
+
+    fake_clients["pag"].ensure_retention_policy.assert_called_once_with(
+        "part-uuid",
+        "repo-uuid",
+        {"objRetMode": "PAG", "objRetTimeSpan": "P30D", "enableAutoObjDestr": True},
+    )
 
 
 def test_sync_bucket_starts_initial_copy_job_when_task_created(fake_clients):

@@ -303,7 +303,10 @@ def _sync_pdr_task(pdr_cfg: dict, bucket_name: str, dry_run: bool, report: SyncR
             "maxParallelJobs": co.get("max_parallel_jobs"),
             "checkDestination": co.get("check_destination"),
             "enableDeletion": co.get("enable_deletion"),
-            "deleteDelayDays": co.get("delete_delay_days"),
+            # Always 0: object retention/expiry is governed by PAG's own
+            # lifecycle policy (pag.lifecycle_days) now, not by delaying
+            # deletion mirroring here.
+            "deleteDelayDays": 0,
         }
     if "schedule" in pdr_cfg:
         sch = pdr_cfg["schedule"]
@@ -357,15 +360,16 @@ def sync_bucket(
     bucket_name: str,
     tenant: str,
     dry_run: bool = False,
-    delete_delay_days: int | None = None,
+    lifecycle_days: int | None = None,
 ) -> SyncReport:
     """``tenant`` names the PAG partition to use/create and is always
     required explicitly: several real tenant codes share a common prefix
     (e.g. "ME", "ME-SR", "ME-SRE", "ME-SRE2"), so guessing it from the
     bucket name risks silently picking the wrong tenant.
 
-    ``delete_delay_days``, if given, overrides
-    ``pdr.copy_options.delete_delay_days`` for this run only.
+    ``lifecycle_days``, if given, overrides ``pag.lifecycle_days`` for
+    this run only. PDR's own deletion delay is always 0 -- object
+    retention/expiry is governed entirely by PAG's lifecycle policy.
     """
     report = SyncReport(bucket_name=bucket_name, dry_run=dry_run)
 
@@ -373,15 +377,12 @@ def sync_bucket(
         if section not in config:
             raise ConfigError(f"Missing top-level config section '{section}'")
 
-    pdr_cfg = config["pdr"]
-    if delete_delay_days is not None:
-        pdr_cfg = {
-            **pdr_cfg,
-            "copy_options": {**pdr_cfg.get("copy_options", {}), "delete_delay_days": delete_delay_days},
-        }
+    pag_cfg = config["pag"]
+    if lifecycle_days is not None:
+        pag_cfg = {**pag_cfg, "lifecycle_days": lifecycle_days}
 
     _sync_cos_bucket(config["cos"], bucket_name, dry_run, report)
-    _sync_pag_repository(config["pag"], bucket_name, tenant, dry_run, report)
-    _sync_pdr_task(pdr_cfg, bucket_name, dry_run, report)
+    _sync_pag_repository(pag_cfg, bucket_name, tenant, dry_run, report)
+    _sync_pdr_task(config["pdr"], bucket_name, dry_run, report)
 
     return report

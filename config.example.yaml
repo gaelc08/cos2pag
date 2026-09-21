@@ -114,7 +114,8 @@ pag:
 
   # Auto-delete objects after this many days (sets the repository's
   # retention policy: objRetMode=PAG, enableAutoObjDestr=true). Omit this
-  # key entirely to leave the repository's lifecycle unmanaged.
+  # key entirely to leave the repository's lifecycle unmanaged. Override
+  # per run with --lifecycle-days.
   lifecycle_days: 90   # CHANGE_ME -- confirm the real retention target
 
 pdr:
@@ -161,7 +162,9 @@ pdr:
     max_parallel_jobs: 2
     check_destination: false
     enable_deletion: true
-    delete_delay_days: 0   # default delay, in days, before a source deletion is mirrored to the target (0 = immediately) -- override per run with --delete-delay-days
+    # Deletion Delay is always 0 (not configurable here): deletions are
+    # mirrored immediately, and object retention/expiry is governed
+    # entirely by PAG's lifecycle policy instead (see pag.lifecycle_days).
 
   schedule:
     enabled: true
