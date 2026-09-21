@@ -20,6 +20,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tenant", required=True, help="PAG partition/tenant name (required -- several real tenant codes share a common prefix, e.g. \"ME\", \"ME-SR\", \"ME-SRE\", so this is never guessed from the bucket name)")
     parser.add_argument("-c", "--config", default="config.yaml", help="Path to the YAML config file (default: config.yaml)")
     parser.add_argument("--env-file", default=".env", help="Path to a .env file with secrets (default: .env in the current directory; silently skipped if absent)")
+    parser.add_argument(
+        "--noncurrent-expiration-days",
+        type=int,
+        default=None,
+        help="Override pag.lifecycle.noncurrent_version_expiration_days for this run only",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Log what would be done without sending any mutating request")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
     return parser
@@ -43,7 +49,13 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         config = load_config(args.config)
-        report = sync_bucket(config, args.bucket_name, args.tenant, dry_run=args.dry_run)
+        report = sync_bucket(
+            config,
+            args.bucket_name,
+            args.tenant,
+            dry_run=args.dry_run,
+            noncurrent_expiration_days=args.noncurrent_expiration_days,
+        )
     except (ConfigError, ApiError, LookupError) as exc:
         logging.getLogger("cos2pag").error("%s", exc)
         return 1

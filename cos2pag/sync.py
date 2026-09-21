@@ -367,6 +367,7 @@ def sync_bucket(
     bucket_name: str,
     tenant: str,
     dry_run: bool = False,
+    noncurrent_expiration_days: int | None = None,
 ) -> SyncReport:
     """``tenant`` names the PAG partition to use/create and is always
     required explicitly: several real tenant codes share a common prefix
@@ -376,6 +377,10 @@ def sync_bucket(
     PDR's own deletion delay is always 0 -- object retention/expiry is
     governed entirely by PAG's S3 lifecycle configuration (pag.lifecycle)
     instead.
+
+    ``noncurrent_expiration_days``, if given, overrides
+    pag.lifecycle.noncurrent_version_expiration_days for this run only,
+    without touching the rest of pag.lifecycle.
     """
     report = SyncReport(bucket_name=bucket_name, dry_run=dry_run)
 
@@ -385,6 +390,12 @@ def sync_bucket(
 
     pag_cfg = config["pag"]
     pdr_cfg = config["pdr"]
+
+    if noncurrent_expiration_days is not None:
+        pag_cfg = {
+            **pag_cfg,
+            "lifecycle": {**pag_cfg.get("lifecycle", {}), "noncurrent_version_expiration_days": noncurrent_expiration_days},
+        }
 
     _sync_cos_bucket(config["cos"], bucket_name, dry_run, report)
     repo = _sync_pag_repository(pag_cfg, bucket_name, tenant, dry_run, report)

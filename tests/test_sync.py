@@ -518,3 +518,35 @@ def test_sync_bucket_skips_lifecycle_call_when_partition_not_yet_created(monkeyp
     ensure_bucket_lifecycle_mock.assert_not_called()
     step = next(s for s in report.steps if s.name == "pag.lifecycle")
     assert step.changed is True
+
+
+def test_sync_bucket_noncurrent_expiration_days_overrides_config(monkeypatch, fake_clients):
+    config = base_config()
+    config["pag"]["lifecycle"] = {"noncurrent_version_expiration_days": 30, "delete_expired_delete_markers": True}
+
+    monkeypatch.setattr(sync_module, "_build_s3_client", lambda cfg: MagicMock())
+    ensure_bucket_lifecycle_mock = MagicMock(return_value=([], "updated"))
+    monkeypatch.setattr(sync_module, "ensure_bucket_lifecycle", ensure_bucket_lifecycle_mock)
+
+    sync_bucket(config, BUCKET, TENANT, noncurrent_expiration_days=90)
+
+    rules = ensure_bucket_lifecycle_mock.call_args.args[2]
+    noncurrent_rule = next(r for r in rules if r["ID"] == "expire-noncurrent-versions")
+    assert noncurrent_rule["NoncurrentVersionExpiration"]["NoncurrentDays"] == 90
+    assert any(r["ID"] == "delete-expired-delete-markers" for r in rules)
+    # the original config dict passed in must not be mutated
+    assert config["pag"]["lifecycle"]["noncurrent_version_expiration_days"] == 30
+
+
+def test_sync_bucket_noncurrent_expiration_days_override_works_without_existing_lifecycle_config(monkeypatch, fake_clients):
+    config = base_config()
+
+    monkeypatch.setattr(sync_module, "_build_s3_client", lambda cfg: MagicMock())
+    ensure_bucket_lifecycle_mock = MagicMock(return_value=([], "updated"))
+    monkeypatch.setattr(sync_module, "ensure_bucket_lifecycle", ensure_bucket_lifecycle_mock)
+
+    report = sync_bucket(config, BUCKET, TENANT, noncurrent_expiration_days=45)
+
+    rules = ensure_bucket_lifecycle_mock.call_args.args[2]
+    assert rules[0]["NoncurrentVersionExpiration"]["NoncurrentDays"] == 45
+    assert any(s.name == "pag.lifecycle" for s in report.steps)

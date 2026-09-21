@@ -123,7 +123,9 @@ this run creates it.
 
 Add `--dry-run` to see what would be sent without making any mutating
 request (`GET`s are still executed so the plan reflects real current
-state), and `-v` for debug logging.
+state), `-v` for debug logging, and `--noncurrent-expiration-days <N>` to
+override `pag.lifecycle.noncurrent_version_expiration_days` for this run
+only (the rest of `pag.lifecycle` is unaffected).
 
 ## Important safety note on the IP whitelist
 
