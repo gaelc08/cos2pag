@@ -19,31 +19,22 @@ For a given bucket name, running the tool does:
      it and update its owner if it already exists).
 3. **PDR** (`/api/tasks`)
    - Create a replication task from the COS bucket (S3 source) to the PAG
-     repository (S3 target, requires `sosapiEnabled` on the repository).
+     repository (S3 target).
 
 Every step is idempotent: re-running the tool on a bucket that is already
 fully set up is a no-op (each step is reported as `SKIPPED`/`OK`).
 
-## Prerequisites
+## Note on `sosapi_enabled`
 
-- The PAG license must have **"Veeam SOSAPI" enabled** (check System >
-  License in the PAG GUI). Without it, PAG repositories are never
-  reachable over S3, so PDR can never replicate into them — this is a
-  license limitation, not something this tool (or the PAG API) can work
-  around. If it's off, get it turned on before setting up any bucket.
-  Despite the name, it's the same generic `sosapiEnabled` / S3 API this
-  tool already targets (port 4443) — it's just licensed under a
-  "Veeam"-branded SKU because that's its most common use case, not
-  because it's restricted to actual Veeam software. PDR (or any other S3
-  client) works the same once it's on. The PAG admin API has no
-  filesystem (NFS/CIFS) alternative to expose repositories, so this
-  license is the only path to get PDR writing into PAG.
-- Repositories created *before* SOSAPI was licensed can't be fixed by
-  PATCHing `sosapiEnabled` after the fact either: PAG's license gates
-  `ModifyObjectRepository()` as a whole (500 "product license does not
-  cover this function"), separately from `CreateObjectRepository()`. A
-  repository stuck like this needs to be recreated once the license is
-  active, not patched.
+`sosapiEnabled` on a PAG repository does **not** gate plain S3 access —
+the repository is reachable over standard S3 (what PDR uses) regardless
+of this flag. "SOSAPI" here is a Veeam-specific protocol extension on top
+of S3 (for Veeam Backup & Replication's object storage integration),
+gated by a separate "Veeam SOSAPI" license option. This tool defaults
+`pag.sosapi_enabled` to `false` since it isn't needed for PDR replication;
+only set it `true` if you specifically need that Veeam extension and have
+it licensed (otherwise it fails with a 500 "product license does not
+cover this function" / `ModifyObjectRepository`).
 
 ## Install
 

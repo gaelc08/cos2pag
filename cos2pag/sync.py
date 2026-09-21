@@ -148,7 +148,7 @@ def _sync_pag_repository(pag_cfg: dict, bucket_name: str, dry_run: bool, report:
         owner,
         hidden=pag_cfg.get("hidden"),
         write_protected=pag_cfg.get("write_protected"),
-        sosapi_enabled=pag_cfg.get("sosapi_enabled", True),
+        sosapi_enabled=pag_cfg.get("sosapi_enabled", False),
     )
     detail = f"{action} repository '{bucket_name}' in partition '{partition.get('name')}'"
     if action == "unchanged":
