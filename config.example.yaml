@@ -112,11 +112,32 @@ pag:
   # Object versioning on the repository (Disabled | Suspended | Enabled).
   object_versioning: "Enabled"
 
-  # Auto-delete objects after this many days (sets the repository's
-  # retention policy: objRetMode=PAG, enableAutoObjDestr=true). Omit this
-  # key entirely to leave the repository's lifecycle unmanaged. Override
-  # per run with --lifecycle-days.
-  lifecycle_days: 90   # CHANGE_ME -- confirm the real retention target
+  # Lifecycle Rules (the "Rules" tab on the repository in the PAG GUI).
+  # This is NOT part of the documented PAG Administration REST API -- the
+  # GUI itself posts to an internal, session/CSRF-based endpoint
+  # (/Storage/ChangeRules) that isn't safe to script against. Instead,
+  # this is applied via the standard S3 Bucket Lifecycle Configuration API
+  # (PUT/GET .../?lifecycle) directly against PAG's own S3 endpoint (see
+  # pdr.target_s3 below, reused here since it's already the right
+  # connection/credentials for this bucket). Each key below maps to one
+  # rule; omit a key to skip that rule entirely. Omit this whole block to
+  # leave the repository's lifecycle unmanaged.
+  lifecycle:
+    # "Delete Incomplete Multipart Uploads"
+    abort_incomplete_multipart_upload_days: 7
+    # "Expiration of Current Object Versions"
+    # current_version_expiration_days: 90
+    # "Delete Expired Delete Markers"
+    delete_expired_delete_markers: true
+    # "Expiration of Noncurrent Object Versions"
+    noncurrent_version_expiration_days: 30
+    # newer_noncurrent_versions: 1
+    # "Transition of Current/Noncurrent Object Versions to Tape" -- PAG
+    # repositories on a TapeOnly partition are tape already, so these are
+    # normally left unset; only needed for mixed disk/tape setups.
+    # current_version_transition_days: 30
+    # noncurrent_version_transition_days: 30
+    # transition_storage_class: "DEEP_ARCHIVE"
 
 pdr:
   base_url: "https://hathor-1.ctie.etat.lu:3601"
@@ -164,7 +185,8 @@ pdr:
     enable_deletion: true
     # Deletion Delay is always 0 (not configurable here): deletions are
     # mirrored immediately, and object retention/expiry is governed
-    # entirely by PAG's lifecycle policy instead (see pag.lifecycle_days).
+    # entirely by PAG's S3 lifecycle configuration instead (see
+    # pag.lifecycle).
 
   schedule:
     enabled: true

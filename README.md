@@ -31,11 +31,18 @@ For a given bucket name, running the tool does:
    - Create an object repository with the same name as the COS bucket in
      that partition, owned by the configured PDR user (or reuse it and
      update its owner if it already exists), enabling object versioning
-     (`pag.object_versioning`) and setting an auto-delete lifecycle
-     policy after `pag.lifecycle_days` days if configured
-     (`/api/partitions/{partitionUuid}/repositories/{repositoryUuid}/retention_policy`,
-     `objRetMode: PAG`, `enableAutoObjDestr: true`). Omit `lifecycle_days`
-     to leave the repository's lifecycle unmanaged.
+     (`pag.object_versioning`) if configured.
+   - If `pag.lifecycle` is configured, set the bucket's S3 Lifecycle
+     Configuration on PAG's own S3 endpoint (`PUT .../?lifecycle`, via
+     `boto3`, reusing `pdr.target_s3`'s credentials). This is the same
+     mechanism behind the "Rules" tab in the PAG GUI (Delete Incomplete
+     Multipart Uploads, Expiration of Current/Noncurrent Object Versions,
+     Delete Expired Delete Markers, Transition of Current/Noncurrent
+     Object Versions to Tape) — that GUI tab isn't part of the documented
+     Administration REST API (it posts to an internal, session/CSRF-based
+     `/Storage/ChangeRules` endpoint), so this goes through the standard
+     S3 Bucket Lifecycle API instead. Omit `pag.lifecycle` to leave the
+     repository's lifecycle unmanaged.
 3. **PDR** (`/api/tasks`, `/api/tasks/{id}/jobs`)
    - Create a replication task from the COS bucket (S3 source) to the PAG
      repository (S3 target), including copy/deletion options
@@ -44,8 +51,8 @@ For a given bucket name, running the tool does:
      separate from `cos.notifications`) if configured. The Kafka topic
      defaults to the bucket's own name, same convention as COS. Deletion
      Delay is always 0 (deletions mirror immediately) — object
-     retention/expiry is governed entirely by PAG's lifecycle policy
-     (`pag.lifecycle_days`) instead.
+     retention/expiry is governed entirely by PAG's S3 lifecycle
+     configuration (`pag.lifecycle`) instead.
    - When the task is newly created, immediately start an initial `Copy`
      job on it (`pdr.auto_start_job`, default `true`). Notifications/
      schedule only pick up *future* object changes, so without this,
@@ -116,8 +123,7 @@ this run creates it.
 
 Add `--dry-run` to see what would be sent without making any mutating
 request (`GET`s are still executed so the plan reflects real current
-state), `-v` for debug logging, and `--lifecycle-days <N>` to override
-`pag.lifecycle_days` for this run only.
+state), and `-v` for debug logging.
 
 ## Important safety note on the IP whitelist
 

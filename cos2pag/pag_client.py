@@ -215,40 +215,5 @@ class PagClient:
             return existing, "unchanged"
         return self.update_repository(partition_uuid, existing["uuid"], body), "updated"
 
-    def get_retention_policy(self, partition_uuid: str, repository_uuid: str) -> dict[str, Any] | None:
-        return request_json(
-            self.session,
-            "GET",
-            self._url(f"/api/partitions/{partition_uuid}/repositories/{repository_uuid}/retention_policy"),
-            timeout=self.timeout,
-        )
-
-    def set_retention_policy(self, partition_uuid: str, repository_uuid: str, body: dict[str, Any]) -> dict[str, Any] | None:
-        return request_json(
-            self.session,
-            "PUT",
-            self._url(f"/api/partitions/{partition_uuid}/repositories/{repository_uuid}/retention_policy"),
-            timeout=self.timeout,
-            json=body,
-            dry_run=self.dry_run,
-        )
-
-    def ensure_retention_policy(
-        self, partition_uuid: str, repository_uuid: str, desired: dict[str, Any]
-    ) -> tuple[dict[str, Any] | None, str]:
-        """Set the repository's retention/lifecycle policy (PUT replaces
-        it wholesale) unless it already matches every field in
-        ``desired``.
-
-        Returns ``(policy, action)`` where action is "updated" or
-        "unchanged". A repository always has *some* retention policy
-        (default `objRetMode: "None"`), so there's no "created" state
-        here.
-        """
-        existing = self.get_retention_policy(partition_uuid, repository_uuid)
-        if existing is not None and all(existing.get(k) == v for k, v in desired.items()):
-            return existing, "unchanged"
-        return self.set_retention_policy(partition_uuid, repository_uuid, desired), "updated"
-
 
 __all__ = ["PagClient", "ApiError"]

@@ -401,34 +401,6 @@ def test_sync_pdr_task_delete_delay_days_is_always_zero(fake_clients):
     assert task_body["options"]["deleteDelayDays"] == 0
 
 
-def test_sync_bucket_lifecycle_days_override(fake_clients):
-    config = base_config()
-    config["pag"]["lifecycle_days"] = 30
-    fake_clients["pag"].ensure_retention_policy.return_value = ({"objRetMode": "PAG"}, "updated")
-
-    sync_bucket(config, BUCKET, TENANT, lifecycle_days=90)
-
-    fake_clients["pag"].ensure_retention_policy.assert_called_once_with(
-        "part-uuid",
-        "repo-uuid",
-        {"objRetMode": "PAG", "objRetTimeSpan": "P90D", "enableAutoObjDestr": True},
-    )
-
-
-def test_sync_bucket_lifecycle_days_default_from_config(fake_clients):
-    config = base_config()
-    config["pag"]["lifecycle_days"] = 30
-    fake_clients["pag"].ensure_retention_policy.return_value = ({"objRetMode": "PAG"}, "updated")
-
-    sync_bucket(config, BUCKET, TENANT)
-
-    fake_clients["pag"].ensure_retention_policy.assert_called_once_with(
-        "part-uuid",
-        "repo-uuid",
-        {"objRetMode": "PAG", "objRetTimeSpan": "P30D", "enableAutoObjDestr": True},
-    )
-
-
 def test_sync_bucket_starts_initial_copy_job_when_task_created(fake_clients):
     fake_clients["pdr"].ensure_task.return_value = ({"id": 42, "alias": BUCKET}, "created")
 
@@ -490,29 +462,41 @@ def test_sync_bucket_skips_lifecycle_when_not_configured(fake_clients):
     report = sync_bucket(base_config(), BUCKET, TENANT)
 
     assert not any(s.name == "pag.lifecycle" for s in report.steps)
-    fake_clients["pag"].ensure_retention_policy.assert_not_called()
 
 
-def test_sync_bucket_sets_lifecycle_policy_with_correct_body(fake_clients):
+def test_sync_bucket_sets_lifecycle_rules_via_s3_api(monkeypatch, fake_clients):
     config = base_config()
-    config["pag"]["lifecycle_days"] = 90
-    fake_clients["pag"].ensure_retention_policy.return_value = ({"objRetMode": "PAG"}, "updated")
+    config["pag"]["lifecycle"] = {"noncurrent_version_expiration_days": 30, "delete_expired_delete_markers": True}
+
+    s3_client = MagicMock()
+    monkeypatch.setattr(sync_module, "_build_s3_client", lambda cfg: s3_client)
+    monkeypatch.setattr(
+        sync_module,
+        "ensure_bucket_lifecycle",
+        MagicMock(return_value=([{"ID": "expire-noncurrent-versions"}], "updated")),
+    )
 
     report = sync_bucket(config, BUCKET, TENANT)
 
-    fake_clients["pag"].ensure_retention_policy.assert_called_once_with(
-        "part-uuid",
-        "repo-uuid",
-        {"objRetMode": "PAG", "objRetTimeSpan": "P90D", "enableAutoObjDestr": True},
-    )
+    sync_module.ensure_bucket_lifecycle.assert_called_once()
+    call_args = sync_module.ensure_bucket_lifecycle.call_args.args
+    assert call_args[0] is s3_client
+    assert call_args[1] == BUCKET
+    rule_ids = {rule["ID"] for rule in call_args[2]}
+    assert rule_ids == {"expire-noncurrent-versions", "delete-expired-delete-markers"}
+
     step = next(s for s in report.steps if s.name == "pag.lifecycle")
     assert step.changed is True
 
 
-def test_sync_bucket_reports_unchanged_lifecycle_as_skipped(fake_clients):
+def test_sync_bucket_reports_unchanged_lifecycle_as_skipped(monkeypatch, fake_clients):
     config = base_config()
-    config["pag"]["lifecycle_days"] = 90
-    fake_clients["pag"].ensure_retention_policy.return_value = ({"objRetMode": "PAG"}, "unchanged")
+    config["pag"]["lifecycle"] = {"noncurrent_version_expiration_days": 30}
+
+    monkeypatch.setattr(sync_module, "_build_s3_client", lambda cfg: MagicMock())
+    monkeypatch.setattr(
+        sync_module, "ensure_bucket_lifecycle", MagicMock(return_value=([{"ID": "expire-noncurrent-versions"}], "unchanged"))
+    )
 
     report = sync_bucket(config, BUCKET, TENANT)
 
@@ -521,13 +505,16 @@ def test_sync_bucket_reports_unchanged_lifecycle_as_skipped(fake_clients):
     assert step.changed is False
 
 
-def test_sync_bucket_skips_lifecycle_call_when_partition_not_yet_created(fake_clients):
+def test_sync_bucket_skips_lifecycle_call_when_partition_not_yet_created(monkeypatch, fake_clients):
     config = base_config()
-    config["pag"]["lifecycle_days"] = 90
+    config["pag"]["lifecycle"] = {"noncurrent_version_expiration_days": 30}
     fake_clients["pag"].ensure_partition.return_value = (None, "created")
+
+    ensure_bucket_lifecycle_mock = MagicMock()
+    monkeypatch.setattr(sync_module, "ensure_bucket_lifecycle", ensure_bucket_lifecycle_mock)
 
     report = sync_bucket(config, BUCKET, TENANT, dry_run=True)
 
-    fake_clients["pag"].ensure_retention_policy.assert_not_called()
+    ensure_bucket_lifecycle_mock.assert_not_called()
     step = next(s for s in report.steps if s.name == "pag.lifecycle")
     assert step.changed is True

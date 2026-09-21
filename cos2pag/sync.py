@@ -22,6 +22,7 @@ from .cos_client import CosClient, acl_map_to_pairs, merge_acl, merge_allowed_ip
 from .http_client import ApiError, build_session
 from .pag_client import PagClient
 from .pdr_client import PdrClient
+from .s3_lifecycle_client import build_lifecycle_rules, build_s3_client, ensure_bucket_lifecycle
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,10 @@ def _build_pdr_client(cfg: dict, dry_run: bool) -> PdrClient:
     auth = AuthConfig.from_dict(cfg.get("auth", {}))
     session = build_session(auth, verify_ssl=cfg.get("verify_ssl", True))
     return PdrClient(base_url, session, timeout=cfg.get("timeout", 30), dry_run=dry_run)
+
+
+def _build_s3_client(s3_cfg: dict):
+    return build_s3_client(s3_cfg)
 
 
 def _sync_cos_bucket(cos_cfg: dict, bucket_name: str, dry_run: bool, report: SyncReport) -> None:
@@ -209,13 +214,6 @@ def _sync_pag_repository(pag_cfg: dict, bucket_name: str, tenant_name: str, dry_
             changed=True,
             detail=f"created repository '{bucket_name}' in partition '{tenant_name}'",
         )
-        lifecycle_days = pag_cfg.get("lifecycle_days")
-        if lifecycle_days is not None:
-            report.add(
-                "pag.lifecycle",
-                changed=True,
-                detail=f"set {lifecycle_days}-day auto-delete lifecycle on repository '{bucket_name}'",
-            )
         return None
 
     repo, action = client.ensure_repository(
@@ -233,30 +231,39 @@ def _sync_pag_repository(pag_cfg: dict, bucket_name: str, tenant_name: str, dry_
     else:
         report.add("pag.repository", changed=True, detail=detail)
 
-    lifecycle_days = pag_cfg.get("lifecycle_days")
-    if lifecycle_days is not None:
-        if repo is None:
-            # dry-run: the repository was only just simulated as created,
-            # so there's nothing real to set a retention policy on yet.
-            report.add(
-                "pag.lifecycle",
-                changed=True,
-                detail=f"set {lifecycle_days}-day auto-delete lifecycle on repository '{bucket_name}'",
-            )
-        else:
-            retention_body = {
-                "objRetMode": "PAG",
-                "objRetTimeSpan": f"P{lifecycle_days}D",
-                "enableAutoObjDestr": True,
-            }
-            policy, policy_action = client.ensure_retention_policy(partition["uuid"], repo["uuid"], retention_body)
-            policy_detail = f"{policy_action} {lifecycle_days}-day auto-delete lifecycle on repository '{bucket_name}'"
-            if policy_action == "unchanged":
-                report.add("pag.lifecycle", changed=False, skipped=True, detail=policy_detail)
-            else:
-                report.add("pag.lifecycle", changed=True, detail=policy_detail)
-
     return repo
+
+
+def _sync_pag_lifecycle(
+    pdr_cfg: dict, pag_cfg: dict, bucket_name: str, repo: dict | None, dry_run: bool, report: SyncReport
+) -> None:
+    """Set the bucket's S3 Lifecycle Configuration (pag.lifecycle) via
+    PAG's own S3 endpoint -- the same one PDR writes to
+    (pdr.target_s3), reused here rather than duplicated, since it's
+    already the correct connection/credentials for this bucket.
+    """
+    lifecycle_cfg = pag_cfg.get("lifecycle")
+    if not lifecycle_cfg:
+        return
+
+    rules = build_lifecycle_rules(lifecycle_cfg)
+    if not rules:
+        return
+
+    if repo is None:
+        # dry-run: the repository doesn't exist yet, so there's nothing
+        # real to set a lifecycle configuration on.
+        report.add("pag.lifecycle", changed=True, detail=f"set S3 lifecycle rules on bucket '{bucket_name}'")
+        return
+
+    target_s3_cfg = require(pdr_cfg, "target_s3", "pdr")
+    s3_client = _build_s3_client(target_s3_cfg)
+    _, action = ensure_bucket_lifecycle(s3_client, bucket_name, rules, dry_run=dry_run)
+    detail = f"{action} S3 lifecycle rules on bucket '{bucket_name}'"
+    if action == "unchanged":
+        report.add("pag.lifecycle", changed=False, skipped=True, detail=detail)
+    else:
+        report.add("pag.lifecycle", changed=True, detail=detail)
 
 
 def _sync_pdr_task(pdr_cfg: dict, bucket_name: str, dry_run: bool, report: SyncReport) -> None:
@@ -304,8 +311,8 @@ def _sync_pdr_task(pdr_cfg: dict, bucket_name: str, dry_run: bool, report: SyncR
             "checkDestination": co.get("check_destination"),
             "enableDeletion": co.get("enable_deletion"),
             # Always 0: object retention/expiry is governed by PAG's own
-            # lifecycle policy (pag.lifecycle_days) now, not by delaying
-            # deletion mirroring here.
+            # S3 lifecycle configuration (pag.lifecycle) now, not by
+            # delaying deletion mirroring here.
             "deleteDelayDays": 0,
         }
     if "schedule" in pdr_cfg:
@@ -360,16 +367,15 @@ def sync_bucket(
     bucket_name: str,
     tenant: str,
     dry_run: bool = False,
-    lifecycle_days: int | None = None,
 ) -> SyncReport:
     """``tenant`` names the PAG partition to use/create and is always
     required explicitly: several real tenant codes share a common prefix
     (e.g. "ME", "ME-SR", "ME-SRE", "ME-SRE2"), so guessing it from the
     bucket name risks silently picking the wrong tenant.
 
-    ``lifecycle_days``, if given, overrides ``pag.lifecycle_days`` for
-    this run only. PDR's own deletion delay is always 0 -- object
-    retention/expiry is governed entirely by PAG's lifecycle policy.
+    PDR's own deletion delay is always 0 -- object retention/expiry is
+    governed entirely by PAG's S3 lifecycle configuration (pag.lifecycle)
+    instead.
     """
     report = SyncReport(bucket_name=bucket_name, dry_run=dry_run)
 
@@ -378,11 +384,11 @@ def sync_bucket(
             raise ConfigError(f"Missing top-level config section '{section}'")
 
     pag_cfg = config["pag"]
-    if lifecycle_days is not None:
-        pag_cfg = {**pag_cfg, "lifecycle_days": lifecycle_days}
+    pdr_cfg = config["pdr"]
 
     _sync_cos_bucket(config["cos"], bucket_name, dry_run, report)
-    _sync_pag_repository(pag_cfg, bucket_name, tenant, dry_run, report)
-    _sync_pdr_task(config["pdr"], bucket_name, dry_run, report)
+    repo = _sync_pag_repository(pag_cfg, bucket_name, tenant, dry_run, report)
+    _sync_pag_lifecycle(pdr_cfg, pag_cfg, bucket_name, repo, dry_run, report)
+    _sync_pdr_task(pdr_cfg, bucket_name, dry_run, report)
 
     return report
