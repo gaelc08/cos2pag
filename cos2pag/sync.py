@@ -13,6 +13,7 @@ Pipeline for a given bucket name, matching the 4 stages of the task:
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -266,6 +267,62 @@ def _sync_pag_lifecycle(
         report.add("pag.lifecycle", changed=True, detail=detail)
 
 
+# PDR's dowMask matches .NET's System.DayOfWeek enum (Sunday=0 ... Saturday=6)
+# as a bitmask (1 << day), confirmed against the real GUI: checking only
+# "Saturday" there corresponds to dowMask=64=1<<6.
+_DOW_BITS = {
+    "sunday": 1,
+    "monday": 2,
+    "tuesday": 4,
+    "wednesday": 8,
+    "thursday": 16,
+    "friday": 32,
+    "saturday": 64,
+}
+
+
+def _weekend_spread_schedule(bucket_name: str, spread_cfg: dict) -> tuple[int, int]:
+    """Deterministically assign this bucket a single (day, hour) slot out
+    of an evenly-spaced grid across the given days, so that many buckets'
+    weekly copy jobs don't all fire at once.
+
+    The slot is derived from a stable hash of the bucket name (not
+    Python's salted ``hash()``, and not an incrementing counter): the
+    same bucket always lands on the same slot on every run (idempotent,
+    no state file needed), while different buckets spread pseudo-randomly
+    across the full set of slots.
+
+    Returns ``(dow_mask, hour)`` for a single day (PDR's schedule only
+    supports one hour per task, applied to every selected day, so
+    spreading across multiple hours requires one day per slot).
+    """
+    days = spread_cfg.get("days") or ["Saturday", "Sunday"]
+    start_hour = spread_cfg.get("start_hour", 0)
+    interval_hours = spread_cfg.get("interval_hours", 2)
+    if interval_hours <= 0:
+        raise ConfigError("pdr.schedule.weekend_spread.interval_hours must be positive")
+
+    hours = list(range(start_hour, 24, interval_hours))
+    if not hours or not days:
+        raise ConfigError("pdr.schedule.weekend_spread needs at least one day and one hour slot")
+
+    total_slots = len(days) * len(hours)
+    digest = hashlib.sha256(bucket_name.encode("utf-8")).hexdigest()
+    slot_index = int(digest, 16) % total_slots
+
+    day_name = days[slot_index // len(hours)]
+    hour = hours[slot_index % len(hours)]
+
+    try:
+        dow_mask = _DOW_BITS[day_name.strip().lower()]
+    except KeyError:
+        raise ConfigError(
+            f"Unknown day '{day_name}' in pdr.schedule.weekend_spread.days, expected one of {sorted(_DOW_BITS)}"
+        ) from None
+
+    return dow_mask, hour
+
+
 def _sync_pdr_task(pdr_cfg: dict, bucket_name: str, dry_run: bool, report: SyncReport) -> None:
     client = _build_pdr_client(pdr_cfg, dry_run)
 
@@ -317,11 +374,15 @@ def _sync_pdr_task(pdr_cfg: dict, bucket_name: str, dry_run: bool, report: SyncR
         }
     if "schedule" in pdr_cfg:
         sch = pdr_cfg["schedule"]
+        if "weekend_spread" in sch:
+            dow_mask, hour = _weekend_spread_schedule(bucket_name, sch["weekend_spread"])
+        else:
+            dow_mask, hour = sch.get("dow_mask"), sch.get("hour")
         task_body["schedule"] = {
             "enabled": sch.get("enabled", False),
             "weekMultiplier": sch.get("week_multiplier"),
-            "dowMask": sch.get("dow_mask"),
-            "hour": sch.get("hour"),
+            "dowMask": dow_mask,
+            "hour": hour,
         }
     if pdr_cfg.get("notifications", {}).get("enabled"):
         notif_cfg = pdr_cfg["notifications"]

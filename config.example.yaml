@@ -186,8 +186,24 @@ pdr:
   schedule:
     enabled: true
     week_multiplier: 1
-    dow_mask: 64    # bitmask of days of week the job runs on
-    hour: 2         # local hour of day the job starts
+
+    # Spreads each bucket's weekly copy job across a grid of slots
+    # (here: every 2 hours across Saturday + Sunday) instead of every
+    # bucket firing at the same dow_mask/hour, which would start every
+    # task's consolidation copy at once. Each bucket's slot is derived
+    # from a hash of its own name: the same bucket always lands on the
+    # same slot (stable across re-runs, no state file needed), and
+    # different buckets spread out pseudo-randomly across all slots.
+    # Remove this block and set dow_mask/hour directly below instead if
+    # you want every bucket pinned to the same fixed schedule.
+    weekend_spread:
+      days: [Saturday, Sunday]
+      start_hour: 0
+      interval_hours: 2
+
+    # dow_mask: 64  # bitmask of days of week the job runs on -- ignored
+    # hour: 2       # local hour of day the job starts -- ignored
+    # (both ignored while weekend_spread is set above)
 
   # Object-change notifications for the replication task itself (separate
   # from cos.notifications, which configures COS's own bucket

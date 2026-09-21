@@ -62,6 +62,21 @@ For a given bucket name, running the tool does:
 Every step is idempotent: re-running the tool on a bucket that is already
 fully set up is a no-op (each step is reported as `SKIPPED`/`OK`).
 
+## Spreading the weekly copy schedule (`pdr.schedule.weekend_spread`)
+
+If every bucket's task uses the same `dow_mask`/`hour`, every bucket's
+weekly consolidation copy starts at the exact same moment — undesirable
+once you have more than a handful of buckets. Set
+`pdr.schedule.weekend_spread` instead of `dow_mask`/`hour` directly to
+spread jobs across an evenly-spaced grid of slots (by default: every 2
+hours across Saturday and Sunday). Each bucket's slot is derived from a
+stable hash of its own name, not an incrementing counter or a state
+file: the same bucket always lands on the same slot (safe to re-run
+without moving an existing task's schedule), while different buckets
+land on different slots across the grid. PDR only supports one hour per
+task (applied to whichever days are selected), so each slot is a single
+day + hour, not a set of days.
+
 ## Note on `sosapi_enabled`
 
 `sosapiEnabled` on a PAG repository does **not** gate plain S3 access —

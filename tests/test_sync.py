@@ -3,8 +3,15 @@ from unittest.mock import MagicMock
 import pytest
 
 from cos2pag import sync as sync_module
+from cos2pag.config import ConfigError
 from cos2pag.http_client import ApiError
-from cos2pag.sync import _build_persistent_buffer_body, _duration_to_seconds, _size_to_bytes, sync_bucket
+from cos2pag.sync import (
+    _build_persistent_buffer_body,
+    _duration_to_seconds,
+    _size_to_bytes,
+    _weekend_spread_schedule,
+    sync_bucket,
+)
 
 BUCKET = "my-bucket"
 TENANT = "MY-TENANT"
@@ -47,6 +54,51 @@ def test_build_persistent_buffer_body_maps_fields():
         "bufFlushOnMaxSize": 100 * 1024**3,
         "bufThreshold": 0,
     }
+
+
+def test_weekend_spread_schedule_is_deterministic_for_same_bucket():
+    spread_cfg = {"days": ["Saturday", "Sunday"], "start_hour": 0, "interval_hours": 2}
+
+    first = _weekend_spread_schedule("my-bucket", spread_cfg)
+    second = _weekend_spread_schedule("my-bucket", spread_cfg)
+
+    assert first == second
+
+
+def test_weekend_spread_schedule_returns_valid_dow_mask_and_hour():
+    spread_cfg = {"days": ["Saturday", "Sunday"], "start_hour": 0, "interval_hours": 2}
+
+    dow_mask, hour = _weekend_spread_schedule("my-bucket", spread_cfg)
+
+    assert dow_mask in (64, 1)  # Saturday=64, Sunday=1
+    assert hour in range(0, 24, 2)
+
+
+def test_weekend_spread_schedule_spreads_different_buckets_across_slots():
+    spread_cfg = {"days": ["Saturday", "Sunday"], "start_hour": 0, "interval_hours": 2}
+
+    slots = {_weekend_spread_schedule(f"bucket-{i}", spread_cfg) for i in range(24)}
+
+    # 24 distinctly-named buckets across 24 slots should not all collapse
+    # onto a single slot (proves the hash actually varies with input).
+    assert len(slots) > 1
+
+
+def test_weekend_spread_schedule_defaults_to_saturday_sunday_every_2_hours():
+    dow_mask, hour = _weekend_spread_schedule("my-bucket", {})
+
+    assert dow_mask in (64, 1)
+    assert hour in range(0, 24, 2)
+
+
+def test_weekend_spread_schedule_rejects_non_positive_interval():
+    with pytest.raises(ConfigError):
+        _weekend_spread_schedule("my-bucket", {"interval_hours": 0})
+
+
+def test_weekend_spread_schedule_rejects_unknown_day():
+    with pytest.raises(ConfigError):
+        _weekend_spread_schedule("my-bucket", {"days": ["Someday"]})
 
 
 def test_build_persistent_buffer_body_only_path_required():
@@ -284,6 +336,48 @@ def test_sync_pdr_task_omits_notifications_when_disabled(fake_clients):
 
     (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
     assert "notifications" not in task_body
+
+
+def test_sync_pdr_task_uses_fixed_dow_mask_and_hour_when_no_weekend_spread(fake_clients):
+    config = base_config()
+    config["pdr"]["schedule"] = {"enabled": True, "week_multiplier": 1, "dow_mask": 64, "hour": 2}
+
+    sync_bucket(config, BUCKET, TENANT)
+
+    (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
+    assert task_body["schedule"] == {"enabled": True, "weekMultiplier": 1, "dowMask": 64, "hour": 2}
+
+
+def test_sync_pdr_task_uses_weekend_spread_when_configured(fake_clients):
+    config = base_config()
+    config["pdr"]["schedule"] = {
+        "enabled": True,
+        "week_multiplier": 1,
+        "weekend_spread": {"days": ["Saturday", "Sunday"], "start_hour": 0, "interval_hours": 2},
+    }
+
+    sync_bucket(config, BUCKET, TENANT)
+
+    (task_body,) = fake_clients["pdr"].ensure_task.call_args.args
+    schedule = task_body["schedule"]
+    assert schedule["enabled"] is True
+    assert schedule["weekMultiplier"] == 1
+    assert schedule["dowMask"] in (64, 1)
+    assert schedule["hour"] in range(0, 24, 2)
+
+
+def test_sync_pdr_task_weekend_spread_gives_same_bucket_same_schedule_across_runs(fake_clients):
+    config = base_config()
+    config["pdr"]["schedule"] = {"enabled": True, "weekend_spread": {}}
+
+    sync_bucket(config, BUCKET, TENANT)
+    (first_task_body,) = fake_clients["pdr"].ensure_task.call_args.args
+
+    fake_clients["pdr"].ensure_task.reset_mock()
+    sync_bucket(config, BUCKET, TENANT)
+    (second_task_body,) = fake_clients["pdr"].ensure_task.call_args.args
+
+    assert first_task_body["schedule"] == second_task_body["schedule"]
 
 
 def test_sync_bucket_requires_tenant_argument():
