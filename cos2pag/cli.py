@@ -6,6 +6,7 @@ import sys
 
 from dotenv import load_dotenv
 
+from . import __version__
 from .config import ConfigError, load_config
 from .http_client import ApiError
 from .sync import sync_bucket
@@ -16,6 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="cos2pag",
         description="Set up COS -> PAG bucket replication via PDR for a given bucket.",
     )
+    parser.add_argument("--version", action="version", version=f"cos2pag version {__version__}")
     parser.add_argument("bucket_name", help="Name of the COS bucket to synchronize (also used as the PAG repository name)")
     parser.add_argument("--tenant", required=True, help="PAG partition/tenant name (required -- several real tenant codes share a common prefix, e.g. \"ME\", \"ME-SR\", \"ME-SRE\", so this is never guessed from the bucket name)")
     parser.add_argument("-c", "--config", default="config.yaml", help="Path to the YAML config file (default: config.yaml)")

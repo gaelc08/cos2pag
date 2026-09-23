@@ -1,5 +1,3 @@
-import os
-
 import pytest
 
 from cos2pag.config import ConfigError, load_config

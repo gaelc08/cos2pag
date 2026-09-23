@@ -92,7 +92,9 @@ cover this function" / `ModifyObjectRepository`).
 ## Install
 
 ```
-pip install -r requirements.txt
+pip install .                     # installs a `cos2pag` command on PATH
+# or, to run from the checkout without installing:
+pip install -r requirements.txt   # then use `python -m cos2pag`
 ```
 
 ## Configure
@@ -169,5 +171,10 @@ config if that lock-down is actually what you want.
 ## Tests
 
 ```
+pip install -e '.[dev]'
+ruff check .
 pytest
 ```
+
+CI (`.github/workflows/ci.yml`) runs the same on every push and pull
+request.

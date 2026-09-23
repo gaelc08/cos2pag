@@ -537,7 +537,7 @@ def test_sync_bucket_does_not_start_job_when_task_updated(fake_clients):
 def test_sync_bucket_skips_job_start_in_dry_run_creation(fake_clients):
     fake_clients["pdr"].ensure_task.return_value = (None, "created")
 
-    report = sync_bucket(base_config(), BUCKET, TENANT, dry_run=True)
+    sync_bucket(base_config(), BUCKET, TENANT, dry_run=True)
 
     fake_clients["pdr"].start_job.assert_not_called()
 
